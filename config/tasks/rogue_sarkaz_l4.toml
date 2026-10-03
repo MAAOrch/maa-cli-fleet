@@ -1,0 +1,25 @@
+# rogue_sarkaz_l4.toml — l-4（主机 idx9/16672，日服）萨卡兹肉鸽 · 一直刷
+#
+# 用户 2026-10-03 指示：l-4 的水月刷完了，接下来刷萨卡兹。
+# 配装沿用标准：维什戴尔/先手必胜/借干员+非好友助战/不投资；
+# 难度按既定口径"水月·傀影=3、其余=MAX" → Sarkaz = MAX（与 l-2 同配）。
+
+[[tasks]]
+name = "StartUp"
+type = "StartUp"
+params = { client_type = "YoStarJP", start_game_enabled = true }
+
+[[tasks]]
+name = "Roguelike 无限"
+type = "Roguelike"
+params = {
+  theme = "Sarkaz",
+  mode = 0,
+  starts_count = 99999,
+  difficulty = 2147483647,
+  core_char = "维什戴尔",
+  roles = "先手必胜",
+  use_support = true,
+  use_nonfriend_support = true,
+  investment_enabled = false,
+}

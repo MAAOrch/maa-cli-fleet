@@ -16,8 +16,8 @@
 `runner/accounts.json` 里，肉鸽机就是一个带 `rogueTask` 的普通账号：
 
 ```json
-{ "id": "l4", "name": "l-4 肉鸽机（日服·水月）", "emu": "9", "daily": "daily_l4",
-  "rogueTask": "rogue_mizuki_l4", "resident": true,
+{ "id": "l4", "name": "l-4 肉鸽机（日服·萨卡兹）", "emu": "9", "daily": "daily_l4",
+  "rogueTask": "rogue_sarkaz_l4", "resident": true,
   "stateDir": "E:/maa-cli-fleet/data/state_l4", "enabled": true }
 ```
 
@@ -158,6 +158,83 @@ l-4 canary 稳住后，其余 4 台一次性切完（同一套动作）：
 任务文件（`ann_*.toml`，已修好）和账号表的 `annTask` 都原样保留。
 
 
+## 主题切换：l-4 水月 → 萨卡兹（10-03 08:30，TESTED）
+
+用户 2026-10-03 指示「L-4 的水月刷完了，接下来刷萨卡兹」。只改数据、不改代码：
+
+1. 新增 `config/tasks/rogue_sarkaz_l4.toml` —— 与 l-2 同配（`theme=Sarkaz` / `difficulty=2147483647` /
+   维什戴尔 / 先手必胜 / 借干员+非好友助战 / 不投资），沿用既定口径「水月·傀影=3、其余=MAX」；
+2. `runner/accounts.json`：l4 的 `rogueTask` → `rogue_sarkaz_l4`、`name` → `l-4 肉鸽机（日服·萨卡兹）`
+   （改动前备份 `runner/accounts.json.bak-20261003-081955`，替换后逐字节核对：只有这两处 + 中文长度差，46 个账号条目未动）；
+3. 优雅重启：落 `runner/runner.stop` → runner 08:20:14 收到停止信号、停 5 条肉鸽车道、drain 在场任务后退出；
+   `FleetRunner-Watchdog` 08:30:24 拉起新 runner。
+
+实测证据：
+
+```
+08:30:34 [rogue:l2] 已发车 rogue_sarkaz_l2（pid=10052）
+08:30:37 [rogue:l4] 已发车 rogue_sarkaz_l4（pid=11072，日志 rogue_sarkaz_l4_1003_083037.out）
+maa 命令行：E:/maa-cli-fleet/bin/maa.exe --batch run rogue_sarkaz_l4 -a 127.0.0.1:16672
+state.json：{"key":"rogue:l4","file":"rogue_sarkaz_l4","state":"running","note":"肉鸽跑着"}
+hb_rogue_l4.txt 心跳正常；车道实例 emu9 / 16672 不变（缓存目录仍 data/state_l4）
+```
+
+回滚：`rogueTask` 改回 `rogue_mizuki_l4`（任务文件仍在）+ 同法重启 runner。另 4 台主题未动：l1=萨米、l2=萨卡兹、l5/l7=水月。
+
+### ⚠️ 真正的坑：换主题前必须先结算/放弃「进行中的探索」（MAA 不会自己干）
+
+重启后 l4 并没有开始刷萨卡兹——两次发车都是 3.5 分钟就「退出」，asst.log 里是：
+
+```
+Sarkaz@Roguelike@SelectTheme  OcrDetect [{ text: 仮説集, rect: [806,409,51,18] }]  →  ClickSelf ×20
+「exec times exceeded the limit」→ Roguelike 链结束（judge 还把它判成 ok=true completed=2）
+```
+
+抓屏看得清楚：日服 IS 主题列表里，l4 的**水月还有一局探索进行中**（卡片显示「探索中」），
+其余三张卡（萨米/萨卡兹/界园）全是「他のテーマ進行中につき現在進入不可」——**游戏根本不让进**，
+MAA 点 20 次也进不去。查 MAA 资源确认它没有这个场景的处理（全库搜不到「進入不可」，
+`Sarkaz@Roguelike@SelectTheme` 只是「OCR 到仮説集→点它」）→ **换主题必须先把当前主题的探索结算掉**。
+
+人工结算（08:42-08:44，adb 点屏，实测通过）：
+
+| 步 | 操作 | 坐标（1920×1080） |
+|---|---|---|
+| 1 | 主题列表点水月卡下的「テーマへ »」 | (480, 997) |
+| 2 | 水月主题页点「探索を続ける」 | (1680, 845) |
+| 3 | 结算页确认（✓） | (960, 973) → (960, 888) |
+| 4 | 返回（←）主题列表 → 四张卡全部恢复「テーマへ »」（无 探索中 / 進入不可） | (65, 60) |
+
+（第 2 步进去就是**结算页**——因为之前 maa 被停掉时那局其实已经结束了，只是没结算。）
+
+**做人工操作时怎么让车道别抢设备**：常驻车道每轮都会 force-stop 游戏 + 起 maa，人工点屏会被冲掉。
+临时把 `<MuMu 安装>\nx_main\MuMuManager.exe` 改名（本次 `.paused-tmp`）→ `MuMuInfo` 空 →
+`DeviceUp` 转 90×5s 空转（**不 force-stop、不发 maa**），车道被“冻”约 7.5 分钟，人工点屏不被打断；
+点完改回名字，车道下一次 DeviceUp 立刻恢复（08:44:03 自己发车）。
+
+⚠️ 副作用（改名窗口内）：所有机端设备操作一起被冻 —— 期间只有 1 条日常因此记一次「设备未就绪」
+（`daily:a30`，emu30 当日本来就在反复起不来，见下）；**别在忙时段用这招**，用完立刻改回名字。
+
+修好后的实测：
+
+```
+08:44:03 [rogue:l4] 已发车 rogue_sarkaz_l4（pid=7004）
+08:51:56 asst.log: Roguelike theme Sarkaz | mode 0 | difficulty 2147483647
+08:47:40 cur_task = Sarkaz@StartExplore@Roguelike@RecruitOther / ChooseOperFlag   ← 真在萨卡兹里招人开局
+```
+
+（期间 maa 还因为一次读屏踩到游戏 loading 页 → `NextLevel`/`AbandonConfirm` 20 次失败 → 车道自动重发，
+这是肉鸽车道该有的行为；重发后仍回到 Sarkaz 主题继续跑。）
+
+**建议**：把「切主题」做成两步前置检查 —— ① 主题列表里当前主题是否「探索中」；有则先跑一个
+「结算/放弃」任务模板（MAA 里等价的是进主题页 → 放弃），② 再切目标主题。否则任何主题切换都会踩这个坑。
+
+### 坑：drain 超时的在场日常会变孤儿（本次暴露，未修）
+
+`stop` 的 drain 上限 10 分钟；超时后 runner 直接退出，**在场 maa 不被杀**。本次 `daily:a27` 就是这样
+（08:25:50 起跑的 pid 28192 没被杀），新 runner 的 `recoverResidual` 又把同一任务重排 → 同一模拟器
+（17248）上同时两个 maa —— 手工 `taskkill /PID 28192 /T /F` 清掉后恢复正常。
+**建议**：drain 超时就由 runner 亲自杀掉在场 maa（或重启前先确认无在场任务）。
+
 ## 待办
 
 
@@ -166,3 +243,6 @@ ogue_cli_ops.ps1` 里的 `cycle/watch` 那套（留作手动兜底）。
 2. `fleet gen` 要保留常驻账号：现在 gen 从 AUTO-MAS 重建账号表，会把手工加的 `l4` 冲掉（gen 已保留 emu 覆盖，但没保留 resident 条目）。
 3. `fleet runner -status` 的"在跑 N"永远显示 0（进程启动时把读到的 running 当"重启回收"，只影响显示，不影响调度）——顺手修一下更好。
 4. 队列排序：91 个待跑任务里，同优先级按 map 随机序领（BuildPlan 会把热改以外的优先级统一降到 10）——"越早 enqueue 越先跑"不明显，不值得急，但可整理。
+5. 停机 drain 超时会留孤儿 maa（见「主题切换」小节）：drain 超时后应杀掉在场 maa（否则与新进程重排的同名任务抢同一台模拟器）。
+6. 肉鸽换主题缺前置：切主题前得先确认「当前主题没有进行中的探索」（日服会直接锁住其他主题卡，MAA 自己不会结算/放弃，见「主题切换」小节）——建议做成任务制作器的前置检查 / 一个「结算/放弃」任务模板。
+7. emu 5/13/14/30 起不来（10-03 实测：`MuMuManager control --vmindex 5 launch` 返 errcode=0，75s 后仍 `is_process_started=false`；其余 51 台正常，内存余 31GB）→ 这 4 号今天日常全灭（a05/a13/a14/a30，每号已满 3 次重试）。待查：这 4 个实例是不是坏 VM / 要不要重装。
