@@ -1,0 +1,12 @@
+{
+  "_说明": "复制为 roster.json；enabled=false 或删除本文件 = 退回理智自循环。",
+  "enabled": false,
+  "cycleHours": 16,
+  "minGapHours": 12,
+  "reseed": false,
+  "base": "00:15",
+  "order": [
+    "a01",
+    "a02"
+  ]
+}

@@ -5,7 +5,7 @@
 
 ---
 
-## 1. 规模（主机 `E:\AUTO-MAS\config\ScriptConfig.json` 实测）
+## 1. 规模（主机 `<AUTO-MAS>\config\ScriptConfig.json` 实测）
 
 | 项 | 实测值 |
 |---|---|

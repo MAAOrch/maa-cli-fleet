@@ -5,9 +5,9 @@
 
 ## 1. 现象
 
-- 机器 `HOST-01`（Tailscale `<HOST_IP>`，项目在 `E:\maa-cli-fleet`）上，`l-4`（MuMu 实例 9，日服，水月肉鸽连刷 `rogue_mizuki_l4`）从 **10-01 22:44** 起停止：无 maa 进程、模拟器关闭、`asst.log` 不再增长。
+- 机器 `HOST-01`（Tailscale `<HOST_IP>`，项目在 `<项目>`）上，`l-4`（MuMu 实例 9，日服，水月肉鸽连刷 `rogue_mizuki_l4`）从 **10-01 22:44** 起停止：无 maa 进程、模拟器关闭、`asst.log` 不再增长。
 - 其余 4 台（`l-1/l-2/l-5/l-7`）在 10-01 22:52 机端重启后全部自动恢复，**只有 l-4** 没起来。
-- 机端健康巡检（`E:\maa-cli-fleet\ops\rogue_cli_ops.log`，每 ~57s 一次）从 22:44 起持续报：
+- 机端健康巡检（`<项目>\ops\rogue_cli_ops.log`，每 ~57s 一次）从 22:44 起持续报：
   `l-4 | maa=无 | 日志年龄=4xx分 | 隧道=断 | 游戏=(隧道断) | !!需处理`（只上报，不自动修）。
 
 ## 2. 时间线（实测）
@@ -63,7 +63,7 @@ if ($x -match '^\d+$' -and (Get-Process -Id ([int]$x) -ErrorAction SilentlyConti
 1. `node\fleet_node.ps1` `Ensure-Workers`：判活改为**进程身份校验**——
    `powershell.exe` 且命令行含 `rogue_cli_ops.ps1 <kind>-worker <machine>`；不符则清理 pid 文件并重拉，`node.log` 记原因；
 2. `ops\rogue_cli_ops.ps1` `Test-OutError`：空 `.out`、或没有 summary 时间行（`\"04:58:24 - 05:00:22\"`）一律判失败；
-3. 部署：目标机 `E:\maa-cli-fleet\{node,ops}` 同名文件 SHA256 与仓库一致
+3. 部署：目标机 `<项目>\{node,ops}` 同名文件 SHA256 与仓库一致
    （`ops=94C04835…`、`node=E63641F0…`），语法检查 0 错误；重启机端（新 pid=23948）后 `node.log` **没有**误重拉（新判活正确认下 5 个 worker）；
 4. 冒烟：`rogue_cli_ops.ps1 status` 正常输出，5 台 `OK`。
 
@@ -121,5 +121,5 @@ if ($x -match '^\d+$' -and (Get-Process -Id ([int]$x) -ErrorAction SilentlyConti
 1. **蓝屏本身没修**：`0x3b` 一天两次（`C:\Windows\MEMORY.DMP`）。需要单独立项：查 dump、排除驱动/内存/模拟器高负载；否则同类停摆还会再来（判活修复只保证"再来也能自动恢复"）。
 2. `a06`（官方服，`daily_a06`）长期 `!!需处理`：`fleet.local.json` 里有这台，但机端 `node\conf.json` 的 `workers` 没给它配 worker → **属于设计缺口**，需要决定是否补 `cycle`/`watch`。
 3. `runner\run_slot.ps1` 的 `Test-OutErr` 是同款"只匹配 `] Error`"判据（空输出=成功），未改；AUTO-MAS 槽位流程（`a**`）若有同类误判，可参照 §4.3-2 修。
-4. 目标机 `E:\maa-cli-fleet` **不是 git 检出**（GitHub zip 布点），本次靠人工同步文件；后续改动建议走"提交→目标机覆盖同名文件"流程，避免目标机再出现与仓库口径不一致的旧快照。
-5. 本轮未动：`l-1/l-2/l-5/l-7` 的任务配置、AUTO-MAS（`E:\AUTO-MAS`）槽位流程。
+4. 目标机 `<项目>` **不是 git 检出**（GitHub zip 布点），本次靠人工同步文件；后续改动建议走"提交→目标机覆盖同名文件"流程，避免目标机再出现与仓库口径不一致的旧快照。
+5. 本轮未动：`l-1/l-2/l-5/l-7` 的任务配置、AUTO-MAS（`<AUTO-MAS>`）槽位流程。

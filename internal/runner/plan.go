@@ -40,7 +40,8 @@ func (r *Runner) BuildPlan() []planItem {
 	r.mu.Lock()
 	var items []planItem
 	for _, t := range r.state.Tasks {
-		if t.Kind != "daily" {
+		a := r.findAccountLocked(t.AccountID)
+		if a == nil || !a.Enabled || a.Daily == "" || t.Kind != "daily" {
 			continue
 		}
 		if t.State != "done" && t.State != "queued" && t.State != "failed" {
@@ -48,13 +49,17 @@ func (r *Runner) BuildPlan() []planItem {
 		}
 		// 截止时间
 		var deadline time.Time
-		if t.NextDue != "" {
-			if ts, err := time.Parse("2006-01-02 15:04:05", t.NextDue); err == nil {
-				deadline = ts
-			}
+		if ts, ok := parseStamp(t.NextDue); ok {
+			deadline = ts
 		}
 		if deadline.IsZero() {
-			deadline = now.Add(30 * time.Minute) // 没算过 → 尽快
+			// 首轮以入队时间为锚，不能每次重排都推到 now+30m。
+			if enqueued, ok := parseStamp(t.Enqueued); ok {
+				deadline = enqueued.Add(30 * time.Minute)
+			} else {
+				deadline = now.Add(30 * time.Minute)
+			}
+			t.NextDue = deadline.Format("2006-01-02 15:04:05")
 		}
 		cost := defaultCostS
 		if t.CostSec > 0 {
@@ -71,6 +76,15 @@ func (r *Runner) BuildPlan() []planItem {
 	if slots <= 0 {
 		slots = 4
 	}
+	// 提前/延后窗口：可由 runner.json 的 planEarlyMin / planLateMin 覆写
+	// （班表模式下把 planEarlyMin 设成 0 = 就在班次点上发车，不提前）
+	earlyWin, lateWin := earlyWindowM, lateWindowM
+	if r.cfg.PlanEarlyMin != nil {
+		earlyWin = *r.cfg.PlanEarlyMin
+	}
+	if r.cfg.PlanLateMin != nil {
+		lateWin = *r.cfg.PlanLateMin
+	}
 	// 只数"已经排好的"区间（标准贪心，避免同刻挤爆）
 	placedRanges := [][2]time.Time{}
 	load := func(start, end time.Time) int {
@@ -85,8 +99,8 @@ func (r *Runner) BuildPlan() []planItem {
 	for i := range items {
 		it := &items[i]
 		cost := it.End.Sub(it.Start)
-		earliest := it.Start.Add(-time.Duration(earlyWindowM) * time.Minute)
-		latest := it.Start.Add(time.Duration(lateWindowM) * time.Minute)
+		earliest := it.Start.Add(-time.Duration(earlyWin) * time.Minute)
+		latest := it.Start.Add(time.Duration(lateWin) * time.Minute)
 		placed := false
 		for t := earliest; !t.After(latest); t = t.Add(5 * time.Minute) {
 			if load(t, t.Add(cost)) < slots {
@@ -101,7 +115,7 @@ func (r *Runner) BuildPlan() []planItem {
 			for t := latest; ; t = t.Add(5 * time.Minute) {
 				if load(t, t.Add(cost)) < slots {
 					it.Start, it.End = t, t.Add(cost)
-					if t.After(it.Start.Add(time.Duration(lateWindowM) * time.Minute)) {
+					if t.After(it.Start.Add(time.Duration(lateWin) * time.Minute)) {
 						it.Note = "顺延（含跨天）"
 					}
 					placedRanges = append(placedRanges, [2]time.Time{it.Start, it.End})
@@ -145,7 +159,7 @@ func (r *Runner) BuildPlan() []planItem {
 			}
 			// 想并到 prev 那一批：检查那一批的并发是否放得下，以及不早于自己的最早可提前
 			batchStart := prev.Start
-			if batchStart.Before(it.Start.Add(-time.Duration(earlyWindowM) * time.Minute)) {
+			if batchStart.Before(it.Start.Add(-time.Duration(earlyWin) * time.Minute)) {
 				continue // 提前太多，不划算
 			}
 			if load(batchStart, batchStart.Add(cost)) >= clusterCap {

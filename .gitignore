@@ -1,45 +1,48 @@
-# ── 大件与运行态（不入库）────────────────────────────
+# ── 构建产物 / 二进制（不入库）────────────────────────────
+/fleet.exe
+/dist/
+/bin/*.exe
+/bin/adb/*.exe
+/bin/adb/*.dll
+/bin/debug/
 core/*
 !core/README.md
-data/
-bin/*.exe
-bin/adb/*.exe
-bin/adb/*.dll
-ops/logs/
-ops/*.log
-ops/*.pid
-ops/*.stop
-ops/dailydate_*.txt
-tmp/
+
+# ── 机端运行态（含账号名 / 手机号 / 截图，绝不入库）──────
+/data/
+/runner/*
+!/runner/README.md
+!/runner/*.example.json
+/center/state/
+/center/*.out
+/center/*.err
+
+# ── 本地配置 / 凭据 ──────────────────────────────────────
+/config/fleet.local.json
+/config/profiles/*
+!/config/profiles/default.toml
+/config/tasks/daily_a*.toml
+/config/tasks/ann_a*.toml
+
+# ── 运行日志 / 审计 / 临时抓取物 ─────────────────────────
+/ops/logs/
+/ops/*.log
+/ops/*.out
+/ops/*.pid
+/ops/*.stop
+/ops/dailydate_*.txt
+/ops/local_*
+/ops/mcp_audit.jsonl
+/tmp/
 *.bak
-bin/debug/
-config/fleet.local.json
-
-# ── 机端/后端 运行态（不入库）────────────────────────
-node/conf.json
-node/node.log
-node/node.pid
-node/node.stop
-center/state/
 __pycache__/
+*.pyc
 
-# ── 全量账号接管（主机本地生成物，含账号名，不进库）──
-runner/accounts.json
-runner/state.json
-runner/result_*.json
-runner/*.log
-runner/*.pid
-config/tasks/daily_a*.toml
-config/tasks/ann_a*.toml
-config/profiles/Official.toml
-config/profiles/Bilibili.toml
-config/profiles/YoStarEN.toml
-config/profiles/YoStarKR.toml
-config/profiles/txwy.toml
-
-# Go 构建产物
-dist/
-
-# center 运行态
-center/*.out
-center/*.err
+# ── 本地调试 / 抓取物（可能含账号、密码、手机号）──────────
+/_tmp_*/
+/_work/
+/debug/
+/shots/
+/%SystemDrive%/
+/undefined/
+/~

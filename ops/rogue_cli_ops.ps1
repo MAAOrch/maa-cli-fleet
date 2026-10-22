@@ -85,8 +85,8 @@ $Machines = @(
   [pscustomobject]@{ Name="l-1"; Emu="25"; State="state_l1"; Rogue="rogue_sami_l1";    Daily="daily_l1"; Local="16522"; Fallback="1-7"; Client="YoStarJP"; Pkg=""; Profile="" },
   [pscustomobject]@{ Name="l-4"; Emu="9";  State="state_l4"; Rogue="rogue_mizuki_l4";  Daily="daily_l4"; Local="16524"; Fallback="1-7"; Client="YoStarJP"; Pkg=""; Profile="" },
   [pscustomobject]@{ Name="l-2"; Emu="28"; State="state_l2"; Rogue="rogue_sarkaz_l2";  Daily="daily_l2"; Local="16523"; Fallback="1-7"; Client="YoStarJP"; Pkg=""; Profile="" },
-  [pscustomobject]@{ Name="l-5"; Emu="34"; State="state_l5"; Rogue="rogue_mizuki_l5";  Daily="daily_l5"; Local="16520"; Fallback="1-7"; Client="YoStarJP"; Pkg=""; Profile="" },
-  [pscustomobject]@{ Name="l-7"; Emu="52"; State="state_l7"; Rogue="rogue_mizuki_l7";  Daily="daily_l7"; Local="16521"; Fallback="1-7"; Client="YoStarJP"; Pkg=""; Profile="" }
+  [pscustomobject]@{ Name="l-5"; Emu="34"; State="state_l5"; Rogue="rogue_sami_l5";    Daily="daily_l5"; Local="16520"; Fallback="1-7"; Client="YoStarJP"; Pkg=""; Profile="" },
+  [pscustomobject]@{ Name="l-7"; Emu="52"; State="state_l7"; Rogue="rogue_sami_l7";  Daily="daily_l7"; Local="16521"; Fallback="1-7"; Client="YoStarJP"; Pkg=""; Profile="" }
 )
 if ($MachinesOverride) {
   # 机器表可被 config\fleet.local.json 的 machines 覆盖（本机模式/其它部署）

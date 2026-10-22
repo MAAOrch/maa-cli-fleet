@@ -1,7 +1,9 @@
 package runner
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -26,8 +28,10 @@ import (
 //
 //	· maa 进程退出            → 重来（判 out 文件记成功/失败）
 //	· asst.log 长时间不更新   → 判卡死，杀 maa 重来
+//	· 同一 cur_task 连续空转  → 杀 maa 重来（日志还在写，mtime 看护看不见）
 //	· 连续两轮连设备都起不来 → 硬重启模拟器（坏 VM 阶梯）
 const rogueStaleMin = 5 // 日志多少分钟没更新算卡死
+const rogueSpinMin = 8  // 同一 cur_task 连续多久算空转。2026-10-05 健康局最长 2.5 分钟（l-1 Begin / l-5 空任务）
 
 type rogueLane struct {
 	acc model.Account
@@ -39,6 +43,7 @@ type rogueLane struct {
 	note     string
 	restarts int
 	lastAt   time.Time
+	idle     chan struct{} // non-nil covers DeviceUp, force-stop, launch, Wait and cleanup
 }
 
 func (l *rogueLane) isPaused() bool   { l.mu.Lock(); defer l.mu.Unlock(); return l.paused }
@@ -49,6 +54,25 @@ func (l *rogueLane) setRun(r *maaRun) { l.mu.Lock(); l.run = r; l.mu.Unlock() }
 func (l *rogueLane) curRun() *maaRun  { l.mu.Lock(); defer l.mu.Unlock(); return l.run }
 
 func (l *rogueLane) setNote(n string) { l.mu.Lock(); l.note = n; l.lastAt = time.Now(); l.mu.Unlock() }
+
+// beginCycle and pause use the same mutex: no launch can slip past pause.
+func (l *rogueLane) beginCycle() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.paused || l.stop {
+		return false
+	}
+	l.idle = make(chan struct{})
+	return true
+}
+func (l *rogueLane) endCycle() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.idle != nil {
+		close(l.idle)
+		l.idle = nil
+	}
+}
 
 // status 给上报用的一句话。
 func (l *rogueLane) status() string {
@@ -79,7 +103,7 @@ func (l *rogueLane) noteText() string {
 func (r *Runner) startResidents() {
 	for i := range r.accounts {
 		a := r.accounts[i]
-		if a.RogueTask == "" {
+		if !a.Enabled || a.RogueTask == "" {
 			continue
 		}
 		l := &rogueLane{acc: a, note: "常驻"}
@@ -134,122 +158,147 @@ func (r *Runner) residentLoop(l *rogueLane) {
 		if l.stopped() {
 			break
 		}
+		r.laneBeat(a) // paused lanes are alive during arbitrarily long daily runs
 		if l.isPaused() {
 			time.Sleep(3 * time.Second)
 			continue
 		}
 		r.laneBeat(a)
 
-		// 设备：起机 → 等端口 → adb → boot（常驻机永不关机）
-		port, err := DeviceUp(r.cfg, a.Emu)
-		if err != nil {
-			fails++
-			l.setNote("设备未就绪：" + err.Error())
-			r.upsertRogueTask(a, "running", "设备未就绪（第 "+strconv.Itoa(fails)+" 次）")
-			log.Printf("[rogue:%s] 设备未就绪：%v（连续 %d 次）", a.ID, err, fails)
-			if fails >= 2 {
-				DeviceHardReset(r.cfg, a.Emu)
-				fails = 0
-			}
-			sleepInterruptible(l, 60*time.Second)
+		if !l.beginCycle() {
 			continue
 		}
-		fails = 0
+		func() {
+			defer l.endCycle()
+			// 设备：起机 → 等端口 → adb → boot（常驻机永不关机）
+			port, err := DeviceUp(r.cfg, a.Emu)
+			if err != nil {
+				fails++
+				l.setNote("设备未就绪：" + err.Error())
+				r.upsertRogueTask(a, "running", "设备未就绪（第 "+strconv.Itoa(fails)+" 次）")
+				log.Printf("[rogue:%s] 设备未就绪：%v（连续 %d 次）", a.ID, err, fails)
+				if fails >= 2 {
+					DeviceHardReset(r.cfg, a.Emu)
+					fails = 0
+				}
+				sleepInterruptible(l, 60*time.Second)
+				return
+			}
+			fails = 0
 
-		// 关游戏再发车：肉鸽被日常打断过/上次被杀，留着的画面会让 MAA 从脏状态起步。
-		// 但暂停信号随时可能到 —— 到就不动手（别人正在跑日常，不能 force-stop 抢设备）
-		if l.isPaused() {
-			sleepInterruptible(l, 2*time.Second)
-			continue
-		}
-		forceStopGame(r.cfg, port, GamePackage(r.cfg, a.Client, port))
-		if l.isPaused() {
-			sleepInterruptible(l, 2*time.Second)
-			continue
-		}
-
-		run, err := r.startMaa(a, port, a.RogueTask)
-		if err != nil {
-			l.setNote("发车失败：" + err.Error())
-			log.Printf("[rogue:%s] 发车失败：%v", a.ID, err)
-			sleepInterruptible(l, 60*time.Second)
-			continue
-		}
-		// 抢跑：暂停信号在起机过程里到了 → 立刻把这把收回去，别和日常抢设备
-		if l.isPaused() {
-			killMaa(run)
-			sleepInterruptible(l, 2*time.Second)
-			continue
-		}
-		l.setRun(run)
-		l.setNote("肉鸽跑着")
-		r.upsertRogueTask(a, "running", "肉鸽跑着")
-		log.Printf("[rogue:%s] 已发车 %s（pid=%d，日志 %s）", a.ID, a.RogueTask, run.cmd.Process.Pid, filepath.Base(run.out))
-
-		// 看护：进程退出 / 被暂停 / 日志卡死
-		// 注意：Wait() 的返回值只能收一次！自己退出（case 收到）就不能再 `<-done`，
-		// 否则永久阻塞（2026-10-02 14:03 l-4 肉鸽自然退出后车道卡死 6 小时，就是这个坑）。
-		done := make(chan error, 1)
-		go func() { done <- run.cmd.Wait() }()
-		lastMod := time.Now() // 从“现在”起算新鲜度（asst.log 是跨次追加的，不能用文件 mtime 起步）
-		lastBeat := time.Now()
-		reason := ""
-		exited := false
-		for {
-			select {
-			case <-done:
-				exited = true
-				reason = "任务退出"
-			default:
-			}
-			if exited {
-				break
-			}
-			if l.stopped() {
-				killMaa(run)
-				reason = "收到停止"
-				break
-			}
+			// 关游戏再发车：肉鸽被日常打断过/上次被杀，留着的画面会让 MAA 从脏状态起步。
+			// 但暂停信号随时可能到 —— 到就不动手（别人正在跑日常，不能 force-stop 抢设备）
 			if l.isPaused() {
-				killMaa(run)
-				reason = "日常插队（暂停）"
-				break
+				sleepInterruptible(l, 2*time.Second)
+				return
 			}
-			r.laneBeat(a)
-			if mt := r.logModTime(a); mt.After(lastMod) {
-				lastMod = mt
-			} else if time.Since(lastMod) > rogueStaleMin*time.Minute {
-				killMaa(run)
-				reason = fmt.Sprintf("日志 %.0f 分钟没更新（卡死）", time.Since(lastMod).Minutes())
-				break
+			forceStopGame(r.cfg, port, GamePackage(r.cfg, a.Client, port))
+			if l.isPaused() {
+				sleepInterruptible(l, 2*time.Second)
+				return
 			}
-			// 心跳（每 ~10 分钟一条）：车道没声音不代表在干活，留个心跳好排查
-			if time.Since(lastBeat) > 10*time.Minute {
-				log.Printf("[rogue:%s] 看护中：maa pid=%d，日志 %.1f 分钟前更新", a.ID, run.cmd.Process.Pid, r.logAgeMin(a))
-				lastBeat = time.Now()
-			}
-			time.Sleep(20 * time.Second)
-		}
-		if !exited {
-			<-done // 是我们杀的 → 等它真的收尸；自己退的上面已经收到，不能再收一次
-		}
-		l.setRun(nil)
-		l.restarts++
 
-		if l.stopped() {
-			break
-		}
-		// 自然退出 → 判 out（成功/失败）；被杀 → 只记原因
-		if reason == "任务退出" {
-			ok, why := r.judgeOutFile(run.out)
-			l.setNote("肉鸽" + map[bool]string{true: "完成", false: "失败"}[ok] + why)
-			log.Printf("[rogue:%s] 肉鸽退出：ok=%v %s → 立即重来", a.ID, ok, why)
-		} else {
-			l.setNote(reason)
-			log.Printf("[rogue:%s] 肉鸽中断：%s → 重来", a.ID, reason)
-		}
-		r.upsertRogueTask(a, "running", l.note)
-		sleepInterruptible(l, 10*time.Second)
+			run, err := r.startMaa(a, port, a.RogueTask)
+			if err != nil {
+				l.setNote("发车失败：" + err.Error())
+				log.Printf("[rogue:%s] 发车失败：%v", a.ID, err)
+				sleepInterruptible(l, 60*time.Second)
+				return
+			}
+			// 抢跑：暂停信号在起机过程里到了 → 立刻把这把收回去，别和日常抢设备
+			if l.isPaused() || l.stopped() {
+				killMaa(run)
+				_ = run.cmd.Wait() // reap a launch raced by pause before releasing ownership
+				return
+			}
+			l.setRun(run)
+			l.setNote("肉鸽跑着")
+			r.upsertRogueTask(a, "running", "肉鸽跑着")
+			log.Printf("[rogue:%s] 已发车 %s（pid=%d，日志 %s）", a.ID, a.RogueTask, run.cmd.Process.Pid, filepath.Base(run.out))
+
+			// 看护：进程退出 / 被暂停 / 日志卡死
+			// 注意：Wait() 的返回值只能收一次！自己退出（case 收到）就不能再 `<-done`，
+			// 否则永久阻塞（2026-10-02 14:03 l-4 肉鸽自然退出后车道卡死 6 小时，就是这个坑）。
+			done := make(chan error, 1)
+			go func() { done <- run.cmd.Wait() }()
+			lastMod := time.Now() // 从“现在”起算新鲜度（asst.log 是跨次追加的，不能用文件 mtime 起步）
+			lastBeat := time.Now()
+			reason := ""
+			exited := false
+			var spinTask string
+			var spinSince time.Time
+			spinSeen := false
+			for {
+				select {
+				case <-done:
+					exited = true
+					reason = "任务退出"
+				default:
+				}
+				if exited {
+					break
+				}
+				if l.stopped() {
+					killMaa(run)
+					reason = "收到停止"
+					break
+				}
+				if l.isPaused() {
+					killMaa(run)
+					reason = "日常插队（暂停）"
+					break
+				}
+				r.laneBeat(a)
+				if mt := r.logModTime(a); mt.After(lastMod) {
+					lastMod = mt
+				} else if time.Since(lastMod) > rogueStaleMin*time.Minute {
+					killMaa(run)
+					reason = fmt.Sprintf("日志 %.0f 分钟没更新（卡死）", time.Since(lastMod).Minutes())
+					break
+				}
+				if task, ok := lastCurTask(filepath.Join(r.stateDirOf(a), "debug", "asst.log")); ok {
+					if !spinSeen || task != spinTask {
+						spinTask = task
+						spinSince = time.Now()
+						spinSeen = true
+					} else if time.Since(spinSince) >= rogueSpinMin*time.Minute {
+						killMaa(run)
+						name := task
+						if name == "" {
+							name = "(空)"
+						}
+						reason = fmt.Sprintf("同一任务 %s 已 %.0f 分钟（空转）", name, time.Since(spinSince).Minutes())
+						break
+					}
+				}
+				// 心跳（每 ~10 分钟一条）：车道没声音不代表在干活，留个心跳好排查
+				if time.Since(lastBeat) > 10*time.Minute {
+					log.Printf("[rogue:%s] 看护中：maa pid=%d，日志 %.1f 分钟前更新", a.ID, run.cmd.Process.Pid, r.logAgeMin(a))
+					lastBeat = time.Now()
+				}
+				time.Sleep(20 * time.Second)
+			}
+			if !exited {
+				<-done // 是我们杀的 → 等它真的收尸；自己退的上面已经收到，不能再收一次
+			}
+			l.setRun(nil)
+			l.restarts++
+
+			if l.stopped() {
+				return
+			}
+			// 自然退出 → 判 out（成功/失败）；被杀 → 只记原因
+			if reason == "任务退出" {
+				ok, why := r.judgeOutFile(run.out)
+				l.setNote("肉鸽" + map[bool]string{true: "完成", false: "失败"}[ok] + why)
+				log.Printf("[rogue:%s] 肉鸽退出：ok=%v %s → 立即重来", a.ID, ok, why)
+			} else {
+				l.setNote(reason)
+				log.Printf("[rogue:%s] 肉鸽中断：%s → 重来", a.ID, reason)
+			}
+			r.upsertRogueTask(a, "running", l.noteText())
+			sleepInterruptible(l, 10*time.Second)
+		}()
 	}
 	r.upsertRogueTask(a, "done", "已停止")
 	log.Printf("[rogue:%s] 常驻肉鸽已停止", a.ID)
@@ -258,23 +307,32 @@ func (r *Runner) residentLoop(l *rogueLane) {
 // ---- 与日常互斥 ---------------------------------------------------------------
 
 // pauseResident 暂停某账号的肉鸽（日常要插队）：杀 maa + 等它真的停下（模拟器不动）。
-func (r *Runner) pauseResident(accountID string) {
+func (r *Runner) pauseResident(accountID string) error {
+	return r.pauseResidentWithin(accountID, 30*time.Second)
+}
+
+func (r *Runner) pauseResidentWithin(accountID string, timeout time.Duration) error {
 	r.mu.Lock()
 	l := r.lanes[accountID]
 	r.mu.Unlock()
 	if l == nil {
-		return
+		return nil
 	}
-	l.setPaused(true)
-	if run := l.curRun(); run != nil {
-		log.Printf("[rogue:%s] 日常插队 → 暂停肉鸽（杀 maa pid=%d）", accountID, run.cmd.Process.Pid)
-		killMaa(run)
+	l.mu.Lock()
+	l.paused = true
+	idle := l.idle
+	l.mu.Unlock()
+	// The cycle owns kill and Wait; acknowledgement includes their completion.
+	if idle == nil {
+		return nil
 	}
-	for i := 0; i < 60; i++ { // 最多等 30 秒
-		if l.curRun() == nil {
-			break
-		}
-		time.Sleep(500 * time.Millisecond)
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-idle:
+		return nil
+	case <-timer.C:
+		return fmt.Errorf("resident %s did not quiesce within %s", accountID, timeout)
 	}
 }
 
@@ -295,7 +353,7 @@ func (r *Runner) resumeResident(accountID string) {
 func sleepInterruptible(l *rogueLane, d time.Duration) {
 	end := time.Now().Add(d)
 	for time.Now().Before(end) {
-		if l.stopped() {
+		if l.stopped() || l.isPaused() {
 			return
 		}
 		time.Sleep(time.Second)
@@ -321,6 +379,54 @@ func forceStopGame(cfg Config, port, pkg string) {
 func (r *Runner) laneBeat(a model.Account) {
 	p := filepath.Join(filepath.Dir(r.cfg.StateFile), "hb_rogue_"+a.ID+".txt")
 	_ = os.WriteFile(p, []byte(time.Now().Format("2006-01-02 15:04:05")+"\n"), 0o644)
+}
+
+// lastCurTask 读 asst.log 尾巴，取最后一条 cur_task。日志还在刷、但任务名不变 = 空转。
+// 找不到（文件不在 / 尾巴里没有这个字段）返回 false，调用方不要据此杀进程。
+func lastCurTask(path string) (string, bool) {
+	const tail = 256 << 10
+	b, truncated, err := readTail(path, tail)
+	if err != nil || len(b) == 0 {
+		return "", false
+	}
+	// 只有 seek 进来的尾巴才可能切到半行。整文件读取时第一行是完整的，不能丢。
+	if truncated {
+		if i := bytes.IndexByte(b, '\n'); i >= 0 && i < len(b)-1 {
+			b = b[i+1:]
+		}
+	}
+	key := []byte(`cur_task":"`)
+	i := bytes.LastIndex(b, key)
+	if i < 0 {
+		return "", false
+	}
+	rest := b[i+len(key):]
+	j := bytes.IndexByte(rest, '"')
+	if j < 0 {
+		return "", false
+	}
+	return string(rest[:j]), true
+}
+
+func readTail(path string, n int64) ([]byte, bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, false, err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, false, err
+	}
+	truncated := false
+	if fi.Size() > n {
+		truncated = true
+		if _, err := f.Seek(fi.Size()-n, io.SeekStart); err != nil {
+			return nil, false, err
+		}
+	}
+	b, err := io.ReadAll(f)
+	return b, truncated, err
 }
 
 // logModTime 该账号 MAA 状态日志的最后修改时间（取不到给零值）。

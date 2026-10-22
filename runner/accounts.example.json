@@ -1,0 +1,36 @@
+{
+  "_说明": "复制为 accounts.json 后按自己的账号修改。真实文件含手机号/昵称，不要提交。",
+  "generatedAt": "2026-01-01T00:00:00+08:00",
+  "slots": 4,
+  "accounts": [
+    {
+      "id": "a01",
+      "name": "示例日常号（官服）",
+      "client": "Official",
+      "stage": "1-7",
+      "fallback": "",
+      "emu": "1",
+      "port": "",
+      "daily": "daily_a01",
+      "annTask": "",
+      "state": "state_a01",
+      "enabled": true
+    },
+    {
+      "id": "l1",
+      "name": "示例肉鸽机（日服·萨米）",
+      "client": "YoStarJP",
+      "stage": "",
+      "fallback": "",
+      "emu": "25",
+      "port": "",
+      "daily": "",
+      "annTask": "",
+      "state": "state_l1",
+      "enabled": true,
+      "rogueTask": "rogue_sami_l1",
+      "resident": true,
+      "stateDir": "data/state_l1"
+    }
+  ]
+}

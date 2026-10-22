@@ -1,4 +1,7 @@
-> 2026-10-01：本项目已收敛为独立项目 `D:\maa-cli-fleet`（自包含：bin/core/config/data/ops/docs 全在项目内）；路径已更新。
+> 2026-10-01：本项目已收敛为独立项目 `<项目>`（自包含：bin/core/config/data/ops/docs 全在项目内）；路径已更新。
+>
+> ⚠️ **LEGACY（2026-10-02）**：本文描述的是 PowerShell 单体 / SSH 隧道栈。当前机端是 Go
+> `fleet.exe runner`（见 `README.md` 与 `docs/ARCHITECTURE-NODE-SELF.md`）；本栈仅作手动排障 / 回滚兜底。
 
 # CLI 肉鸽机队运维手册（收敛版）
 
@@ -11,8 +14,8 @@
 
 ```
 ┌─ 本机 <LOCAL_PC> ─────────────────────────────────────────────┐
-│  D:\maa-cli-fleetin\maa.exe        maa-cli 0.7.5（连设备→驱动游戏）      │
-│  D:\maa-cli-fleet\ops\rogue_cli_ops.ps1   运维脚本（调度/自愈/恢复，17 命令）    │
+│  <项目>\bin\maa.exe        maa-cli 0.7.5（连设备→驱动游戏）      │
+│  <项目>\ops\rogue_cli_ops.ps1   运维脚本（调度/自愈/恢复，17 命令）    │
 │  worker（后台 PS 进程）：cycle ×4 + watch ×1                        │
 │  隧道 ssh -L：16522→17184(l-1) 16523→17280(l-2) 16524→16672(l-4)   │
 │              16520→16452(l-5) 16521→17028(l-7)                     │
@@ -21,8 +24,8 @@
 ┌───────────────▼─ 主机 <HOST> (<HOST_IP>) ────────────────────┐
 │  E:\MuMu Player 12\   5 台模拟器（vms\MuMuPlayer-12.0-{9,25,28,34,52}）│
 │      shell\adb.exe · nx_main\MuMuManager.exe                        │
-│  E:\AUTO-MAS\         生产 MAS（早/晚班）——机队 5 账号已 Status=false │
-│  E:\MAA-Multi\MAA_1..12\ 产线日常槽（不受影响）                       │
+│  <AUTO-MAS>\         生产 MAS（早/晚班）——机队 5 账号已 Status=false │
+│  <MAA-Multi>\MAA_1..12\ 产线日常槽（不受影响）                       │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -33,7 +36,7 @@
 ## 2. 文件树
 
 ```
-D:\maa-cli-fleet\ops\                                   ← 运维根
+<项目>\ops\                                   ← 运维根
 ├── rogue_cli_ops.ps1                         ★ 主脚本（~575 行）
 ├── rogue_cli_ops.log                         动作审计日志
 ├── cycle_l-1/l-2/l-4/l-7.pid (+.stop)        cycle worker 控制
@@ -127,7 +130,7 @@ D:\maa-cli-fleet\ops\                                   ← 运维根
 
 | 项 | 标签 | 证据 |
 |---|---|---|
-| maa-cli 部署+连通（本机） | `IMPLEMENTED`/`TESTED` | D:\maa-cli-fleetin\maa.exe 0.7.5；5 台设备经隧道 getprop=1（多轮实测） |
+| maa-cli 部署+连通（本机） | `IMPLEMENTED`/`TESTED` | <项目>\bin\maa.exe 0.7.5；5 台设备经隧道 getprop=1（多轮实测） |
 | 日常链（6 段）在 CLI 可跑通 | `TESTED` | l-1/l-2/l-7 2026-09-30 全链 Completed；10-01 04:2x 复跑中 |
 | 肉鸽连刷（99999）可连续跑 | `TESTED` | l-5 单 run 2h43m/5 局（09-30 23:31→03:03） |
 | 两功能独立 + 启动前关游戏 | `IMPLEMENTED` | daily/rogue/chain 命令；l-1/l-4 重启实测 |

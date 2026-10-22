@@ -1,5 +1,5 @@
 {
-  "_说明": "机队本地配置模板。复制为 fleet.local.json 后填真值（该文件不入库）。",
+  "_说明": "旧 PowerShell 兜底栈的配置模板（Go runner 请用 runner/runner.example.json）。复制为 fleet.local.json 后填真值（该文件不入库）。",
   "_模式": "默认隧道模式（本机经 ssh 隧道驱动）；设 localMode=true 则为本机模式（脚本就跑在目标机上，直连模拟器）",
   "localMode": false,
   "sshHost": "Administrator@YOUR_HOST",
@@ -35,7 +35,7 @@
       "name": "l-5",
       "emu": "34",
       "state": "state_l5",
-      "rogue": "rogue_mizuki_l5",
+      "rogue": "rogue_sami_l5",
       "daily": "daily_l5",
       "local": "16520"
     },
@@ -43,7 +43,7 @@
       "name": "l-7",
       "emu": "52",
       "state": "state_l7",
-      "rogue": "rogue_mizuki_l7",
+      "rogue": "rogue_sami_l7",
       "daily": "daily_l7",
       "local": "16521"
     }

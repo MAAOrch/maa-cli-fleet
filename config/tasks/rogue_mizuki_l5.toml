@@ -1,7 +1,9 @@
-# rogue_mizuki_l5.toml — l-5（主机 idx34/16452，日服）水月肉鸽 · 目标主题（解锁后一直刷）
+# rogue_mizuki_l5.toml — 文件名保留给当前 runner 内存绑定（l5.rogueTask 重启前仍是这个名字）
 #
-# 用户 2026-09-30 指示：l-5 刷水月；先逐主题试用一把解锁干净状态，成功切到此目标一直刷。
-# 水月配置沿用既定标准：难度3（高难度禁6星，3可用6星/维什戴尔）、维什戴尔、先手必胜、借干员+非好友助战、不投资。
+# 用户 2026-10-05：l-5 水月刷完，换成萨米。正式任务文件是 rogue_sami_l5.toml
+# （accounts.json 已指向它；本文件内容与其一致，避免重启前车道重发仍读到水月）。
+# 配装同 l-1：难度 MAX / 维什戴尔 / 先手必胜 / 借干员+非好友助战 / 不投资。
+# 回滚：恢复同目录 *.bak-20261005-* 后杀掉 l-5 的 maa，车道会重发。
 
 [[tasks]]
 name = "StartUp"
@@ -12,10 +14,10 @@ params = { client_type = "YoStarJP", start_game_enabled = true }
 name = "Roguelike 无限"
 type = "Roguelike"
 params = {
-  theme = "Mizuki",
+  theme = "Sami",
   mode = 0,
   starts_count = 99999,
-  difficulty = 3,
+  difficulty = 2147483647,
   core_char = "维什戴尔",
   roles = "先手必胜",
   use_support = true,

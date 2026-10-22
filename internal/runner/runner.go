@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/xiachk083-hub/maa-cli-fleet/internal/model"
@@ -44,7 +45,10 @@ type Config struct {
 	MaxConcurrent   int      `json:"maxConcurrent"`
 	MinFreeRamMB    int      `json:"minFreeRamMB"`
 	MaxCpuPct       int      `json:"maxCpuPct"`
-	AnnDisabled     bool     `json:"annDisabled"` // true = 这轮先不刷剿灭（不排 ann 任务；state 里旧的也不动）
+	AnnDisabled     bool     `json:"annDisabled"`            // true = 这轮先不刷剿灭（不排 ann 任务；state 里旧的也不动）
+	RosterFile      string   `json:"rosterFile,omitempty"`   // 班表文件（默认：state.json 同目录的 roster.json）
+	PlanEarlyMin    *int     `json:"planEarlyMin,omitempty"` // 前瞻排班最多提前多少分钟（默认 120；班表模式设 0 = 班次点发车）
+	PlanLateMin     *int     `json:"planLateMin,omitempty"`  // 最多延后多少分钟（默认 240）
 }
 
 // State 是 runner/state.json：任务台账。
@@ -58,11 +62,18 @@ type Runner struct {
 	accounts []model.Account
 	state    *State
 	mu       sync.Mutex
+	tickMu   sync.Mutex      // serialize queue input, resource sampling and Tick
 	running  map[string]bool // accountID → 该账号有任务在跑（串行保护）
 	active   map[string]*Task
 	lanes    map[string]*rogueLane // 常驻肉鸽车道（accountID → lane）
 	httpc    *http.Client
 	token    string
+
+	roster *Roster // 班表（nil = 没有/关着 → 旧行为：理智自循环）
+
+	maaPids   map[string]int // accountID → 最近一次发车的 maa pid（体检上报用，见 health.go）
+	reporting atomic.Bool    // 上报防重入（体检含 adb 等慢调用）
+	maintOn   atomic.Bool    // 维护模式状态（用于切换时只打一条日志，不刷屏）
 
 	cpuIdle, cpuKern, cpuUser uint64
 	cpuValid                  bool
@@ -95,7 +106,7 @@ func New(cfgPath string) (*Runner, error) {
 	}
 	r := &Runner{cfg: cfg, state: &State{Tasks: map[string]*Task{}},
 		running: map[string]bool{}, active: map[string]*Task{}, lanes: map[string]*rogueLane{},
-		httpc: &http.Client{Timeout: 30 * time.Second}}
+		maaPids: map[string]int{}, httpc: &http.Client{Timeout: 30 * time.Second}}
 
 	if cfg.LogFile != "" {
 		_ = os.MkdirAll(filepath.Dir(cfg.LogFile), 0o755)
@@ -125,8 +136,76 @@ func New(cfgPath string) (*Runner, error) {
 			r.state.Tasks = map[string]*Task{}
 		}
 	}
-	// 上次进程被杀/崩了 → 残留的 running 一律回收进队列（否则那些账号当天被跳过）
-	// rogue 任务不在此列：它由常驻车道重建（每次启动都重新拉起）。
+	// 班表（可选）：有 = 日常按班次网格跑；没有 = 旧行为（理智自循环）
+	r.roster = LoadRoster(rosterPath(cfg))
+	r.roster.logLine(rosterPath(cfg))
+	r.maintOn.Store(r.MaintenanceOn())
+	return r, nil
+}
+
+// maintenancePath：维护开关文件（存在 = 维护中）。放在 state.json 同目录，机端运维直接看得到。
+func (r *Runner) maintenancePath() string {
+	return filepath.Join(filepath.Dir(r.cfg.StateFile), "maintenance")
+}
+
+// MaintenanceOn：维护模式 —— 人在手工动模拟器（登号/换号/排障）时用。
+// 开着的时候：① 不派新车（队列只进不出）② 不扫孤儿模拟器（谁都不许关）。
+// 肉鸽常驻车道照常跑（它们有自己的机器，不跟人抢）。
+func (r *Runner) MaintenanceOn() bool {
+	_, err := os.Stat(r.maintenancePath())
+	return err == nil
+}
+
+// maintenanceFlip：返回（现在是否维护中，是否刚刚切换过来）—— 只在切换那一次打日志。
+func (r *Runner) maintenanceFlip() (bool, bool) {
+	on := r.MaintenanceOn()
+	if on != r.maintOn.Swap(on) {
+		return on, true
+	}
+	return on, false
+}
+
+// SetMaintenance：机端开关（on/off/status）。改文件不动进程，下一次 tick（≤30 秒）生效。
+func SetMaintenance(cfgPath, action string) error {
+	b, err := model.ReadFileBOM(cfgPath)
+	if err != nil {
+		return fmt.Errorf("读配置 %s：%w", cfgPath, err)
+	}
+	var cfg Config
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		return fmt.Errorf("解析配置：%w", err)
+	}
+	p := filepath.Join(filepath.Dir(cfg.StateFile), "maintenance")
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "on":
+		body := fmt.Sprintf("%s 维护模式：暂停派车 + 不扫模拟器（删掉本文件即恢复）\n", nowStamp())
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			return err
+		}
+		fmt.Printf("维护模式：开（%s）—— 从现在起不派新车、不关任何模拟器；肉鸽车道照常\n", p)
+	case "off":
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		fmt.Printf("维护模式：关（%s 已删除）—— 下一轮 tick 恢复派车与清扫\n", p)
+	case "status", "":
+		if _, err := os.Stat(p); err == nil {
+			fmt.Printf("维护模式：开（%s）\n", p)
+		} else {
+			fmt.Printf("维护模式：关（%s 不存在）\n", p)
+		}
+	default:
+		return fmt.Errorf("未知动作 %q（用法：-maintenance on|off|status）", action)
+	}
+	return nil
+}
+
+// recoverResidual：残留回收（上次进程被杀/崩了 → running 一律回队列，否则那些账号当天被跳过；
+// rogue 记录删掉，由常驻车道重建）。只该由**真正要跑的进程**调用：
+// 放在 New() 里会让 `-status` 每次都把状态改掉，永远显示不了真实的"在跑"（2026-10-02 修）。
+func (r *Runner) recoverResidual() {
+	r.mu.Lock()
+	recovered := 0
 	for k, t := range r.state.Tasks {
 		if t.Kind == "rogue" {
 			delete(r.state.Tasks, k)
@@ -135,9 +214,14 @@ func New(cfgPath string) (*Runner, error) {
 		if t.State == "running" {
 			t.State = "queued"
 			t.Note = "重启回收"
+			recovered++
 		}
 	}
-	return r, nil
+	r.mu.Unlock()
+	if recovered > 0 {
+		log.Printf("启动回收：%d 个残留 running → queued", recovered)
+		r.saveState()
+	}
 }
 
 // Slots 返回当前并发位。
@@ -186,14 +270,28 @@ func (r *Runner) syncQueue() (added int) {
 				// 次数没用完 → 继续重试；次数用完但**游戏日换了** → 新的一天重新排（否则一次失败就永远不再跑）
 				dueNow = true
 			case t.State == "done":
+				// 班表：reseed=true 时把"离班次最近的网格点"写入 NextDue（立即对齐）；
+				// 默认不动 —— 下一次跑完由 scheduleNextDaily 落到网格上（首日不早饭/不浪费理智）
+				if ro := r.roster; ro != nil && ro.Reseed && t.Ended != "" {
+					if nd, ok := parseStamp(t.NextDue); ok && !ro.OnGrid(a.ID, nd) {
+						// “清掉旧排班”：直接取从现在起的**第一个**网格点（不管上次跑了多久），
+						// 于是全队在一个 cycle 内铺成连续流水线。首轮可能比理智满点早，但不丢理智：
+						// 回复是连续的，只是这一轮花的点少一些。
+						if want, _, ok := ro.SnapDue(a.ID, time.Time{}, time.Now()); ok {
+							t.NextDue = want.Format(stampLayout)
+							t.PlanAt = ""
+							t.Note = "班表对齐"
+						}
+					}
+				}
 				// 前瞻排班优先：排班给的时间点到了才跑（这样就不会"到点一拥而上"）
 				if t.PlanAt != "" {
-					if ts, err := time.Parse("2006-01-02 15:04:05", t.PlanAt); err == nil {
+					if ts, ok := parseStamp(t.PlanAt); ok {
 						dueNow = time.Now().After(ts)
 					}
 				} else if t.NextDue == "" {
 					dueNow = true // 老记录没算过 → 补算
-				} else if ts, err := time.Parse("2006-01-02 15:04:05", t.NextDue); err == nil && time.Now().After(ts) {
+				} else if ts, ok := parseStamp(t.NextDue); ok && time.Now().After(ts) {
 					dueNow = true
 				}
 			}
@@ -290,6 +388,73 @@ func (r *Runner) Cancel(key string) error {
 	return nil
 }
 
+// LogRoster 打印班表视图（fleet runner -status 用）：每班几台、下一轮各自什么时候跑。
+func (r *Runner) LogRoster() {
+	ro := r.roster
+	if ro == nil {
+		log.Printf("[班表] 未启用（日常按理智自循环）")
+		return
+	}
+	now := time.Now()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	type row struct {
+		id, shift string
+		due       time.Time
+	}
+	var rows []row
+	for _, a := range r.accounts {
+		if !a.Enabled || a.Daily == "" || !ro.Has(a.ID) {
+			continue
+		}
+		var lastRun time.Time
+		var due time.Time
+		if t := r.state.Tasks["daily:"+a.ID]; t != nil {
+			lastRun, _ = parseStamp(t.Ended)
+			switch {
+			case t.NextDue == "":
+				// 没有历史 → 按班表算
+			case ro.Reseed:
+				// reseed = 启动就把 NextDue 拉到从 now 起的第一个网格点（与 syncQueue 一致）
+				if d, _, ok := ro.SnapDue(a.ID, time.Time{}, now); ok {
+					due = d
+				}
+			default:
+				due, _ = parseStamp(t.NextDue) // 已排好的不动（下次跑完才对齐）
+			}
+		}
+		if due.IsZero() {
+			if d, _, ok := ro.SnapDue(a.ID, lastRun, now); ok {
+				due = d
+			}
+		}
+		rows = append(rows, row{a.ID, ro.shiftOf(a.ID), due})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if !rows[i].due.Equal(rows[j].due) {
+			return rows[i].due.Before(rows[j].due)
+		}
+		return rows[i].id < rows[j].id
+	})
+	per := map[string]int{}
+	for _, x := range rows {
+		per[x.shift]++
+	}
+	var names []string
+	for _, s := range ro.Shifts {
+		names = append(names, fmt.Sprintf("%s %d 台", s.Name, per[s.Name]))
+	}
+	log.Printf("[班表] 周期 %dh / 最少间隔 %dh｜%s｜共 %d 台", ro.CycleHours, ro.MinGapHours, strings.Join(names, "；"), len(rows))
+	log.Printf("[班表] 接下来：")
+	n := len(rows)
+	if n > 16 {
+		n = 16
+	}
+	for _, x := range rows[:n] {
+		log.Printf("[班表]   %s  %-4s %s", x.due.Format("01-02 15:04"), x.id, x.shift)
+	}
+}
+
 // Status 打印队列视图。
 func (r *Runner) Status() {
 	day := gameDay()
@@ -321,7 +486,11 @@ func (r *Runner) Status() {
 	total := len(r.accounts)
 	r.mu.Unlock()
 	sort.Strings(pend)
-	log.Printf("任务队列｜游戏日 %s｜账号 %d｜并发上限 %d（在跑 %d，肉鸽常驻 %d）｜资源 空闲 %dMB / CPU %.0f%%", day, total, r.cfg.MaxConcurrent, running, rogueN, FreeRAMMB(), r.CPUPercent())
+	maint := "关"
+	if r.MaintenanceOn() {
+		maint = "开（不派车 / 不扫模拟器）"
+	}
+	log.Printf("任务队列｜游戏日 %s｜账号 %d｜并发上限 %d（在跑 %d，肉鸽常驻 %d）｜维护 %s｜资源 空闲 %dMB / CPU %.0f%%", day, total, r.cfg.MaxConcurrent, running, rogueN, maint, FreeRAMMB(), r.CPUPercent())
 	log.Printf("  今日日常完成 %d/%d｜本周剿灭完成 %d｜队列待跑 %d｜失败 %d%s", doneD, total, doneA, queued, failed,
 		func() string {
 			if len(pend) > 0 {
@@ -340,6 +509,11 @@ func (r *Runner) Status() {
 // Run 常驻（once=true 只跑一轮 tick）。
 func (r *Runner) Run(once bool) {
 	log.Printf("调度器启动：并发位 %d，账号 %d 个（任务队列模型）", r.cfg.Slots, len(r.accounts))
+	r.recoverResidual()
+	r.Register()
+	if r.MaintenanceOn() {
+		log.Printf("[维护] 维护模式开着（%s）：不派车、不扫模拟器；删掉该文件即恢复", r.maintenancePath())
+	}
 	r.SweepOrphans()
 	r.startResidents() // 常驻肉鸽车道（不受并发位限制）
 	tick := 0
@@ -390,9 +564,24 @@ func (r *Runner) drain(timeout time.Duration) {
 
 // Tick：补队列 → 填并发位。
 func (r *Runner) Tick() {
+	r.tickMu.Lock()
+	defer r.tickMu.Unlock()
 	r.ApplyOps() // 先合并外部热改请求（queue.in）
 	added := r.syncQueue()
 	r.saveState()
+
+	// 维护模式：人在手工动模拟器（登号/换号/排障）——只入库不派车，也不扫地。
+	if on, flipped := r.maintenanceFlip(); on {
+		if flipped {
+			log.Printf("[维护] 模式开启：暂停派车 + 不扫模拟器（肉鸽车道不受影响），删除 %s 恢复", r.maintenancePath())
+		}
+		if added > 0 {
+			log.Printf("[维护] 新入队 %d 个任务，先存着不跑", added)
+		}
+		return
+	} else if flipped {
+		log.Printf("[维护] 模式关闭：恢复派车与清扫")
+	}
 
 	// 资源闸门：占用过高就停止入队（等在场任务收工、资源回落）
 	freeMB := FreeRAMMB()
@@ -418,29 +607,11 @@ func (r *Runner) Tick() {
 		return
 	}
 
-	r.mu.Lock()
-	free := r.cfg.MaxConcurrent - running
-	var ready []*Task
-	for _, t := range r.state.Tasks {
-		// 只领 daily/ann；rogue 是常驻车道，绝不能被并发位当一次性任务发出去
-		if t.State == "queued" && t.Kind != "rogue" && !r.running[t.AccountID] {
-			ready = append(ready, t)
-		}
-	}
-	r.mu.Unlock()
-	sortQueue(ready)
+	ready := r.claimTasks(time.Now())
 	if added > 0 || len(ready) > 0 {
-		log.Printf("[tick] 新入队 %d｜待跑 %d｜空位 %d", added, len(ready), free)
+		log.Printf("[tick] 新入队 %d｜已领 %d", added, len(ready))
 	}
-	for i := 0; i < len(ready) && i < free; i++ {
-		t := ready[i]
-		r.mu.Lock()
-		t.State = "running"
-		t.Started = nowStamp()
-		t.Attempts++
-		r.active[t.Key] = t
-		r.running[t.AccountID] = true
-		r.mu.Unlock()
+	for _, t := range ready {
 		go func(t *Task) {
 			defer func() {
 				r.mu.Lock()
@@ -451,6 +622,46 @@ func (r *Runner) Tick() {
 			r.runTask(t)
 		}(t)
 	}
+}
+
+// claimTasks selects and reserves work in one critical section.
+func (r *Runner) claimTasks(now time.Time) []*Task {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var ready, claimed []*Task
+	for _, t := range r.state.Tasks {
+		a := r.findAccountLocked(t.AccountID)
+		if a == nil || !a.Enabled || t.State != "queued" || (t.Kind != "daily" && t.Kind != "ann") || r.running[t.AccountID] {
+			continue
+		}
+		if t.Kind == "daily" && a.Daily == "" {
+			continue
+		}
+		if t.Kind == "ann" && r.cfg.AnnDisabled {
+			continue
+		}
+		if t.PlanAt != "" {
+			at, ok := parseStamp(t.PlanAt)
+			if !ok || now.Before(at) {
+				continue
+			}
+		}
+		ready = append(ready, t)
+	}
+	sortQueue(ready)
+	for _, t := range ready {
+		if len(r.active) >= r.cfg.MaxConcurrent {
+			break
+		}
+		if r.running[t.AccountID] {
+			continue
+		}
+		t.State, t.Started = "running", nowStamp()
+		t.Attempts++
+		r.active[t.Key], r.running[t.AccountID] = t, true
+		claimed = append(claimed, t)
+	}
+	return claimed
 }
 
 // DispatchNow：任务一结束就立即补位（不等下一轮 30 秒 tick）——"清完自动接下个"。

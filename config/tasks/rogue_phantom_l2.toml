@@ -1,0 +1,24 @@
+# rogue_phantom_l2.toml — l-2（主机 idx28/17280，日服）傀影肉鸽 · 一直刷
+#
+# 用户 2026-10-11：水月刷完，改刷傀影。配装沿用标准：难度3 / 维什戴尔 / 先手必胜 / 借干员+非好友助战 / 不投资。
+# 难度按既定口径「水月·傀影=3、其余=MAX」。
+
+[[tasks]]
+name = "StartUp"
+type = "StartUp"
+params = { client_type = "YoStarJP", start_game_enabled = true }
+
+[[tasks]]
+name = "Roguelike 无限"
+type = "Roguelike"
+params = {
+  theme = "Phantom",
+  mode = 0,
+  starts_count = 99999,
+  difficulty = 3,
+  core_char = "维什戴尔",
+  roles = "先手必胜",
+  use_support = true,
+  use_nonfriend_support = true,
+  investment_enabled = false,
+}

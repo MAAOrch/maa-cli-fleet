@@ -1,6 +1,10 @@
 # 三层一体（机端 / 后端 / 前端）· 结构设计（ARCHITECTURE）
 
-> 2026-10-01 · 状态：**结构定稿讨论稿**（尚未实现；先留结构，代码之后再写）
+> **2026-10-02 收敛后**：中心的 `/poll` `/command` `/result` 指令通道已删除，只保留
+> `register` / `report` 上报；机端实现为 Go `fleet.exe runner`。当前边界见
+> [`ARCHITECTURE-NODE-SELF.md`](ARCHITECTURE-NODE-SELF.md)。本文保留为三层结构的早期设计记录。
+>
+> 2026-10-01 · 状态：**历史设计稿**（结构已部分落地，指令通道后来被删除）
 > 一句话：机队系统 = **三个组件构成的"一台系统"**——组件是分开的进程、**可以跑在不同机器上**，
 > 之间用"内部地址"互相寻址；三者合起来才是一个整体（类似分布式计算里的 中心 + 工作节点）。
 
@@ -164,6 +168,8 @@ maa-cli-fleet/
 | 2026-10-01 | 认证 | **共享 token**（内网/Tailscale；后续需要再升级 mTLS） |
 | 2026-10-01 | 前端 | **暂缓**（后端 API 定型后再接） |
 | 2026-10-01 | 施工顺序 | **机端 → 后端**（前端留位）；现有"本机 worker + 隧道"保留为过渡/回滚位 |
+| 2026-10-02 | 中心指令通道 | **删除**（自建成 0 使用）；中心只收上报，任务的增删改在机端本地 CLI |
+| 2026-10-02 | 机端形态 | **Go `fleet.exe runner`** 单进程；PS 机端 / worker / 隧道退役，`ops/rogue_cli_ops.ps1` 仅作手动兜底 |
 
 ---
 
@@ -172,8 +178,8 @@ maa-cli-fleet/
 | 项 | 状态 | 证据 |
 |---|---|---|
 | ② 后端 center | **运行中** | 本机 `python center/center.py --port 8790`（pid 45484）；`GET /health` ✓；`center/state/token.txt` |
-| ① 机端 local-desktop | **运行中** | 本机 `nodeleet_node.ps1 run`；中心台账 `local-desktop` 5 台机状态齐全 |
-| ① 机端 host-01 | **运行中（只读）** | 主机 `E:\maa-cli-fleet`（GitHub 拉包布点）；中心台账 `host-01` 5 台机；本机模式 `直连=通`、game pid 与本地视角一致 |
+| ① 机端 local-desktop | **运行中** | 本机 `node\fleet_node.ps1 run`；中心台账 `local-desktop` 5 台机状态齐全 |
+| ① 机端 host-01 | **运行中（只读）** | 主机 `<项目>`（GitHub 拉包布点）；中心台账 `host-01` 5 台机；本机模式 `直连=通`、game pid 与本地视角一致 |
 | 指令回路 | **TESTED** | `POST /command {cmd:"status",apply:true}` → 机端执行 9s → `POST /result ok=True` + 完整 status 输出 |
 | GitHub 分发通道 | **TESTED** | 主机 `Invoke-WebRequest codeload.../zip/refs/heads/master`：70KB / 0.9s（同夜 ssh 传输 ~50KB/s） |
 | ops 本机模式 | **TESTED** | 主机 `ops status` → `直连=通` + game pid 正确；本机隧道模式回归 `status` 仍全 OK |
@@ -191,7 +197,7 @@ maa-cli-fleet/
 **AUTO-MAS 退役（2026-10-01 07:40，实测）**：停掉 4 个 AUTO-MAS 进程 + 禁用 4 个自启/相关任务
 （`AUTO-MAS_AutoStart`、`AUTO-MAS-Boot-Backend`、`fz-maa-launch-one`、`fz-maa-start-one`）；
 我们的 5 个 maa 任务与 5 个 worker 未受影响（实测 OUR_MAA=5 / WORKERS=5，中心 5/5 OK）。
-**回滚**：重新启用上述任务 + 启动 `E:\AUTO-MAS\AUTO-MAS.exe` 即可（配置未动）。
+**回滚**：重新启用上述任务 + 启动 `<AUTO-MAS>\AUTO-MAS.exe` 即可（配置未动）。
 **定时重启已禁用（2026-10-01 07:42，用户决定）**：`DailyRestart0400`（下一次 10/02 04:00）与 `DailyRestart1900`（下一次 10/01 19:00）
 均 Ready → **Disabled**（任务保留，可随时重新启用）。主机不再自动重启；游戏日边界（04:00）由 cycle worker 自行判定，不依赖重启。
 稳定性兜底 = 任务级/设备级自愈 + 开机自恢复链路（断电/蓝屏后登录即自动恢复，实测 ~2 分钟）。

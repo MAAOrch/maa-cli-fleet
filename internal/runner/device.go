@@ -154,11 +154,22 @@ func GameRunning(cfg Config, port, pkg string) string {
 // 背景：runner 被杀/崩时，在跑任务的模拟器不会执行停机 → 孤儿累积 → 内存被打满。
 // 判据：keepEmus（常驻的 5 台）与正在跑任务的账号的实例都跳过，其余关机。
 func (r *Runner) SweepOrphans() {
+	// 维护模式：人在手工动模拟器（登号/换号）—— 一台都不许关（2026-10-03 事故：sweep 把用户正在登号的
+	// idx 4/11/13 当孤儿关了，还在 14 上硬重启过）。
+	if r.MaintenanceOn() {
+		return
+	}
+	owned := map[string]bool{}
 	keep := map[string]bool{}
 	for _, id := range r.cfg.KeepEmus {
 		keep[id] = true
 	}
 	r.mu.Lock()
+	for _, a := range r.accounts {
+		if a.Enabled && a.Emu != "" {
+			owned[a.Emu] = true
+		}
+	}
 	for _, t := range r.active {
 		if a, ok := r.FindAccount(t.AccountID); ok {
 			keep[a.Emu] = true
@@ -173,7 +184,7 @@ func (r *Runner) SweepOrphans() {
 
 	shut := 0
 	for idx, inst := range MuMuAll(r.cfg.MumuManager) {
-		if !inst.Started || idx == "" || keep[idx] {
+		if !inst.Started || idx == "" || !owned[idx] || keep[idx] {
 			continue
 		}
 		log.Printf("[sweep] 关掉孤儿模拟器 idx=%s", idx)

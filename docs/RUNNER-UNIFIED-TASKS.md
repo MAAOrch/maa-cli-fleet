@@ -18,7 +18,7 @@
 ```json
 { "id": "l4", "name": "l-4 肉鸽机（日服·萨卡兹）", "emu": "9", "daily": "daily_l4",
   "rogueTask": "rogue_sarkaz_l4", "resident": true,
-  "stateDir": "E:/maa-cli-fleet/data/state_l4", "enabled": true }
+  "stateDir": "<项目>/data/state_l4", "enabled": true }
 ```
 
 - `rogueTask`：肉鸽任务文件名（有值 = 这台机常驻肉鸽）；
@@ -55,7 +55,7 @@
 06:39:03 [rogue:l4] 常驻肉鸽启动（任务 rogue_mizuki_l4，实例 9）
 06:39:14 [rogue:l4] 已发车 rogue_mizuki_l4（pid=36404，日志 rogue_mizuki_l4_1002_063914.out）
 ```
-- l-4 的 maa：`E:/maa-cli-fleet/bin/maa.exe --batch run rogue_mizuki_l4 -a 127.0.0.1:16672`；
+- l-4 的 maa：`<项目>/bin/maa.exe --batch run rogue_mizuki_l4 -a 127.0.0.1:16672`；
 - 状态目录复用成功：`data\state_l4\debug\asst.log` 持续更新（日志年龄 0 分）；
 - 机端巡检（PS 侧不受影响）：`l-4 | maa=pid36404 | 日志年龄=0分 | 隧道=通 | 游戏=32660 | OK`；
 - PS worker 只剩 l-1/l-2/l-5/l-7 四个（l-4 的已退役）。
@@ -174,7 +174,7 @@ l-4 canary 稳住后，其余 4 台一次性切完（同一套动作）：
 ```
 08:30:34 [rogue:l2] 已发车 rogue_sarkaz_l2（pid=10052）
 08:30:37 [rogue:l4] 已发车 rogue_sarkaz_l4（pid=11072，日志 rogue_sarkaz_l4_1003_083037.out）
-maa 命令行：E:/maa-cli-fleet/bin/maa.exe --batch run rogue_sarkaz_l4 -a 127.0.0.1:16672
+maa 命令行：<项目>/bin/maa.exe --batch run rogue_sarkaz_l4 -a 127.0.0.1:16672
 state.json：{"key":"rogue:l4","file":"rogue_sarkaz_l4","state":"running","note":"肉鸽跑着"}
 hb_rogue_l4.txt 心跳正常；车道实例 emu9 / 16672 不变（缓存目录仍 data/state_l4）
 ```
@@ -234,6 +234,113 @@ MAA 点 20 次也进不去。查 MAA 资源确认它没有这个场景的处理�
 （08:25:50 起跑的 pid 28192 没被杀），新 runner 的 `recoverResidual` 又把同一任务重排 → 同一模拟器
 （17248）上同时两个 maa —— 手工 `taskkill /PID 28192 /T /F` 清掉后恢复正常。
 **建议**：drain 超时就由 runner 亲自杀掉在场 maa（或重启前先确认无在场任务）。
+
+## 主题切换：l-5 水月 → 萨米（2026-10-05 09:06，TESTED）
+
+用户指示「L-5 水月刷完了换成萨米」。没重启 runner（其它车道不动）。
+
+1. 新增 `config/tasks/rogue_sami_l5.toml`，配装同 l-1（Sami / difficulty=MAX / 维什戴尔 / 先手必胜 / 借干员+非好友 / 不投资）。
+2. 机端 `runner/accounts.json`：l5 `rogueTask` → `rogue_sami_l5`，名字改为「日服·萨米·只肉鸽」。备份 `accounts.json.bak-20261005-l5sami`。只动这两处。
+3. 当前车道内存里任务名仍是 `rogue_mizuki_l5`，所以同内容写进该文件（备份 `rogue_mizuki_l5.toml.bak-20261005-l5sami`）。下次 runner 重启会改走 `rogue_sami_l5`。
+4. 只杀 l-5 的 maa，车道自己重发。其它车道未杀。
+
+实测：
+
+```
+08:59:51 已发车 rogue_mizuki_l5 pid=34116（文件 theme=Sami）
+09:06:03 FoldartalGainNextLevel → CloseSamiIntro 点掉开局说明
+09:06:22 WaitForStartButtonClicked
+09:07 截图：OPERATION ISW-NO / 死刑囚の夜（萨米作战加载）
+进程仍存活；命令行在 runner 重启前仍显示 rogue_mizuki_l5
+```
+
+中途坑（已处理）：
+
+- 换主题后第一局在「密文板下一层」被萨米开局说明弹窗挡住（`閉じる`）。MAA 认不出，20 次后整链失败，留下未结算探索。
+- 人工点掉结算页后回到「探索開始」。弹窗每局还会再出。
+- 在**实际加载的**资源 `<项目>/data_fresh/resource/global/YoStarJP/resource/tasks/Roguelike/Sami.json` 加了 `CloseSamiIntro`（JustReturn + ClickRect `[115,96,94,28]`，挂在 `FoldartalGainNextLevel.next` 最后）。备份 `Sami.json.bak-20261005-l5intro`。
+- 先写过 OCR 版，ROI 读不到「閉じる」；无 algorithm 的版本会被当成模板，报 `Templ load failed` 并让 l-5 空转。两版都已换掉。
+- `data/resource/...` 那份不是运行时加载的，已还原。
+
+回滚：还原上述三个 bak，再杀 l-5 的 maa。l-1 下次重发也会读到这个 JP 补丁；它只在密文板按钮认不出时才点一下关闭坐标。
+
+## 主题切换：l-7 萨卡兹 → 萨米（2026-10-11 02:30，TESTED）
+
+用户指示「l-7 的萨卡兹刷完了换萨米刷」。没重启 runner（其它车道不动）。
+
+1. 新增 `config/tasks/rogue_sami_l7.toml`，配装同 l-1（Sami / difficulty=MAX / 维什戴尔 / 先手必胜 / 借干员+非好友 / 不投资）。
+2. 机端 `runner/accounts.json`：l7 `rogueTask` → `rogue_sami_l7`，名字改为「日服·萨米」。备份 `accounts.json.bak-20261011-l7sami`。
+3. 当前车道内存里任务名仍是 `rogue_mizuki_l7`，所以同内容写进该文件（备份 `rogue_mizuki_l7.toml.bak-20261011-l7sami`）。下次 runner 重启改走 `rogue_sami_l7`。
+4. 换主题前萨卡兹还有一局「探索中」（卡在「いつしかの時」，放弃确认会提示进不了结算页）。点「探索を諦める」确认后主题页恢复「探検開始」，主题列表不再锁其它卡。
+5. 只杀 l-7 的 maa，车道重发。期间 `MuMuManager.exe` 被改名成 `MuMuManager.exe.paused-l2-20261011`，DeviceUp 空转；已改回原名（`paused-tmp` 副本仍在）。
+
+实测：
+
+```
+02:17:08 Roguelike theme Sami | mode 0 | difficulty 2147483647
+02:30:10 Sami@Roguelike@StartExplore → SquadConfirm → RecruitOther
+02:31 截图：初霜の湖沼 / 死刑囚の夜（萨米地图，啓示板）
+进程仍存活；命令行在 runner 重启前仍显示 rogue_mizuki_l7
+```
+
+回滚：还原上述 bak，再杀 l-7 的 maa。`CloseSamiIntro` 补丁 10-05 已在，本轮未改资源。
+
+## 主题切换：l-2 水月 → 傀影（2026-10-11 02:51，TESTED）
+
+用户指示「l-2 的水月刷完了要换成傀影」。没重启 runner。
+
+1. 新增 `config/tasks/rogue_phantom_l2.toml`：`theme=Phantom` / `difficulty=3` / 维什戴尔 / 先手必胜 / 借干员+非好友 / 不投资。
+2. 机端 `runner/accounts.json`：l2 `rogueTask` → `rogue_phantom_l2`，名字改为「日服·傀影」。备份 `accounts.json.bak-20261011-l2phantom`。
+3. 车道内存仍是 `rogue_mizuki_l2`，同内容写进该文件（备份 `rogue_mizuki_l2.toml.bak-20261011-l2phantom`）。只杀 l-2 的 maa。
+
+坑：水月还有未结算探索，傀影卡显示「他のテーマ進行中につき現在進入不可」。进水月结算掉已结束的局（干潮に消える灯 / UNCOMPLETED SIMULATION）后才进得去。傀影首次进主题有开场剧情，现有 `DialogSkip` 模板认不出右上角 `SKIP`。在运行时资源 `<项目>/data_fresh/resource/global/YoStarJP/resource/tasks/Roguelike/Phantom.json` 加了 `SkipOpening`（OCR `SKIP`）和 `SkipOpeningConfirm`（点勾后回 `Begin`，不然整链会被判完成）。备份 `Phantom.json.bak-20261011-l2skip`。
+
+实测：
+
+```
+02:48:06 Roguelike theme Phantom | mode 0 | difficulty 3
+02:51:16 Phantom@StartExplore 招募，截图为傀影古城作战，场上ウィシャデル（维什戴尔）
+maa pid=29644 仍在 127.0.0.1:17280；asst.log 年龄 0 秒
+其余车道未杀：l1/l5/l7 的 maa 仍在
+```
+
+回滚：还原上述 bak，再杀 l-2 的 maa。命令行在 runner 重启前仍显示 `rogue_mizuki_l2`（内容已是 Phantom）。
+
+## 主题切换：l-7 萨米 → 界园（2026-10-21 22:0x，TESTED）
+
+用户指示「1-7 这个账号的萨米刷完了（等级已满），换成界园」。没重启 runner。
+
+1. 新增 `config/tasks/rogue_jiegarden_l7.toml`：`theme=JieGarden` / difficulty=MAX / 维什戴尔 / 先手必胜 / 借干员+非好友 / 不投资。
+2. 机端 `runner/accounts.json`：l7 `rogueTask` → `rogue_jiegarden_l7`，名字改为「l-7 肉鸽机（日服·界园）」。备份 `accounts.json.bak-20261021-l7garden`；解析核对 55 个账号只有 l7.name / l7.rogueTask 两处变化。
+3. 车道内存里任务名仍是 `rogue_sami_l7`，所以同内容写进该文件（备份 `rogue_sami_l7.toml.bak-20261021-l7garden`）。下次 runner 重启走 `rogue_jiegarden_l7`。
+4. **只暂停 l-7 车道**：沿用 10-12 已部署的 pause shim（`bin\maa.exe` 实为 shim，正常时透传 `maa.real.exe`）——
+   写 `runner\pause_l7` 标记 → 杀 l7 的 maa → 车道重发，shim 识别 l7 进入 Hold：不碰模拟器、每 20 秒刷 asst.log，
+   5 分钟 stale / 8 分钟 spin 两个看护判据都不会误杀。好处：不用 NtSuspend、也不用改名 `MuMuManager.exe`，其余 4 条车道完全不受影响。
+5. 手动放弃进行中的萨米探索（adb，1280×720；暂停期间游戏被 force-stop，手动 monkey 拉起）：
+   标题 TAP TO START → 大厅「端末」(994,201) → 终端「統合戦略」卡 (1080,255) → 萨米主题页「探索を諦める」(1130,340)
+   → 确认弹窗红勾 (842,495) → 结算页（风雪蔽目 / LEVEL MAX）点 (640,620) 退出 → 主题页变「探索開始」，
+   主题列表四张卡（萨米/萨卡兹/**界園志異 LV1 来園記念**/…）全部解锁、无「探索中 / 進入不可」。
+6. 恢复：删 `runner\pause_l7` → shim 退出 → 车道重发，无标记的 shim 透传 `maa.real.exe`。只杀 l-7 的进程。
+
+实测证据：
+
+```
+22:02:06 [rogue:l7] 已发车 rogue_sami_l7（pid=58340）        ← 暂停前
+22:09:46 [rogue:l7] 肉鸽退出：ok=false completed=0 errored=0 → 立即重来
+22:10:02 [rogue:l7] 已发车 rogue_sami_l7（pid=61064）        ← 恢复后（文件内容已是 JieGarden）
+22:10:03 asst.log: Roguelike theme JieGarden | mode 0 | difficulty 2147483647
+```
+
+备注：命令行在 runner 重启前仍显示 `rogue_sami_l7`（内存名=兼容名）；runner 重启后按 accounts.json 走 `rogue_jiegarden_l7`。
+回滚：还原 `accounts.json.bak-20261021-l7garden` + `rogue_sami_l7.toml.bak-20261021-l7garden`，删 `pause_l7` 标记，杀 l-7 的 maa 等车道重发。
+
+## 空转重发（2026-10-05 16:06，DEPLOYED）
+
+看护原来只认「`asst.log` 5 分钟没更新」。l-7 从 11:32 停在「作战终了」，`RoguelikeBattleExitBegin` 每秒写一条日志，看起来一直健康，直到 15:44 人工杀掉。
+
+`internal/runner/rogue.go`：同一 `cur_task` 连续 8 分钟 → 杀 maa → 车道按原任务重发（关游戏再拉起）。阈值依据当天健康局：l-1/l-5 同一任务最长 2.5 分钟（`TESTED` `go test ./internal/runner`，`lastCurTask`）。尾巴里没有 `cur_task` 不据此杀。
+
+机端 `fleet.exe` 已换（备份 `fleet.exe.bak-20261005-spin`），runner pid=1668 于 16:06:17 拉起。下次同类空转大约 8 分钟内会自己重来，不用等人看。
 
 ## 待办
 

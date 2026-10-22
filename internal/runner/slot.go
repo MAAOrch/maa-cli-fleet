@@ -21,16 +21,19 @@ import (
 // runTask：一个原子任务的完整生命周期（起设备 → 发车 → 判定 → 停机 → 记状态 → 上报）。
 func (r *Runner) runTask(t *Task) {
 	acc, ok := r.FindAccount(t.AccountID)
-	if !ok {
-		r.finishTask(t, false, "账号不存在", "")
+	if !ok || !acc.Enabled {
+		r.finishTask(t, false, "账号不存在或已禁用", "")
 		return
 	}
 	start := time.Now()
 	log.Printf("[%s] 开始 %s（%s，第 %d 次）", t.Key, acc.Name, t.Kind, t.Attempts)
 
 	// 常驻机（肉鸽）：日常要插队 —— 先暂停肉鸽（杀 maa，模拟器不动），跑完自动接回
-	if acc.Resident {
-		r.pauseResident(acc.ID)
+	if acc.Resident || acc.RogueTask != "" {
+		if err := r.pauseResident(acc.ID); err != nil {
+			r.finishTask(t, false, "肉鸽暂停失败："+err.Error(), "")
+			return // fail closed: no device action, no resume on timeout
+		}
 		defer r.resumeResident(acc.ID)
 	}
 
@@ -125,6 +128,7 @@ func (r *Runner) startMaa(a model.Account, port, task string) (*maaRun, error) {
 		_ = f.Close()
 		return nil, err
 	}
+	r.trackMaa(a.ID, cmd.Process.Pid) // 体检上报要知道"这台的 maa 是谁"（见 health.go）
 	return &maaRun{cmd: cmd, out: outFile, task: task}, nil
 }
 
@@ -236,10 +240,21 @@ func (r *Runner) readSanity(a model.Account) (cur, max int) {
 	return cur, max
 }
 
-// scheduleNextDaily：按"理智还要多久满"排下一次日常（自循环）。
-// 每点理智 6 分钟；留 30 分钟余量提前跑；最短 30 分钟后再来。
+// scheduleNextDaily：排下一次日常。
+// 有班表（roster）→ 钉在班次网格上（锚点 + 16h 整数倍，至少隔 15h），
+// 这样它不再随理智相位漂移，全网 00/08/16 三班铺开；
+// 没班表 → 旧行为：按"理智还要多久满"自循环（每点理智 6 分钟，留 30 分钟余量，最短 30 分钟）。
 func (r *Runner) scheduleNextDaily(t *Task, a model.Account) {
+	t.PlanAt = "" // consumed reservation must not trigger the next daily immediately
 	cur, max := r.readSanity(a)
+	if max > 0 {
+		t.SanityCur, t.SanityMax = cur, max
+	}
+	if due, shift, ok := r.roster.SnapDue(a.ID, time.Now(), time.Now()); ok {
+		t.NextDue = due.Format(stampLayout)
+		log.Printf("[%s] 班表%s → 下次日常 %s（理智 %d/%d）", t.Key, shift, t.NextDue, cur, max)
+		return
+	}
 	if max <= 0 {
 		// 读不到（任务没跑成）→ 2 小时后重试，别死循环
 		t.NextDue = time.Now().Add(2 * time.Hour).Format("2006-01-02 15:04:05")
@@ -253,8 +268,7 @@ func (r *Runner) scheduleNextDaily(t *Task, a model.Account) {
 	if mins < 30 {
 		mins = 30
 	}
-	t.SanityCur, t.SanityMax = cur, max
-	t.NextDue = time.Now().Add(time.Duration(mins) * time.Minute).Format("2006-01-02 15:04:05")
+	t.NextDue = time.Now().Add(time.Duration(mins) * time.Minute).Format(stampLayout)
 	log.Printf("[%s] 理智 %d/%d → 下次日常 %s（%.1f 小时后，自循环）", t.Key, cur, max, t.NextDue, float64(mins)/60)
 }
 
@@ -280,6 +294,23 @@ func (r *Runner) finishTask(t *Task, ok bool, note, outFile string) {
 
 // ---- 上报 center -------------------------------------------------------------
 
+// Register：向中心登记本机（上报职能的"注册"环节；机端 = 一台机一个节点）。
+func (r *Runner) Register() {
+	if r.cfg.CenterURL == "" || r.token == "" {
+		return
+	}
+	host, _ := os.Hostname()
+	ids := make([]string, 0, len(r.accounts))
+	for _, a := range r.accounts {
+		if a.Enabled {
+			ids = append(ids, a.ID)
+		}
+	}
+	r.postJSON("/register", map[string]any{"node": map[string]any{
+		"id": r.cfg.NodeID, "ver": "runner-go", "host": host, "machines": ids,
+	}})
+}
+
 func (r *Runner) report(t *Task, acc model.Account, port string, ok bool, note string) {
 	if r.cfg.CenterURL == "" || r.token == "" {
 		return
@@ -304,8 +335,13 @@ func (r *Runner) ReportSummary() {
 	if r.cfg.CenterURL == "" || r.token == "" {
 		return
 	}
+	if !r.reporting.CompareAndSwap(false, true) {
+		return // 上一轮还没报完（体检含 adb 等慢调用）
+	}
+	defer r.reporting.Store(false)
 	day, week := gameDay(), weekKey()
 	machines := map[string]any{}
+	focus := map[string]model.Account{} // 要做设备体检的机：常驻机 + 有任务在跑的机
 	r.mu.Lock()
 	doneN := 0
 	for _, a := range r.accounts {
@@ -349,6 +385,9 @@ func (r *Runner) ReportSummary() {
 			}
 		}
 		machines[a.ID] = st
+		if a.RogueTask != "" {
+			focus[a.ID] = a
+		}
 	}
 	queued, running := 0, 0
 	for _, t := range r.state.Tasks {
@@ -359,7 +398,23 @@ func (r *Runner) ReportSummary() {
 			running++
 		}
 	}
+	for _, t := range r.active {
+		if a, ok := r.FindAccount(t.AccountID); ok {
+			focus[a.ID] = a
+		}
+	}
 	r.mu.Unlock()
+	// 设备体检（锁外做：MuMu/adb 是慢调用）。MuMuAll 一次拿全部实例端口。
+	if len(focus) > 0 {
+		ports := MuMuAll(r.cfg.MumuManager)
+		for _, a := range focus {
+			if m, ok := machines[a.ID].(map[string]any); ok {
+				for k, v := range r.snapshotDevice(a, ports) {
+					m[k] = v
+				}
+			}
+		}
+	}
 	r.postJSON("/report", map[string]any{
 		"node_id": r.cfg.NodeID, "kind": "state",
 		"data": map[string]any{"machines": machines, "statusText": "runner",

@@ -1,15 +1,14 @@
 // Package center —— 机队后端（中心服务）。
 //
-// 与旧 Python 版 API 完全兼容（同样的路径/载荷/状态文件），因此可以直接热替换：
-// 现有 PowerShell 机端不用改一行就能继续上报/拉令。
+// 职责（2026-10-02 收敛后）：台账（节点/机台）+ 事件 + 对外只读 API。
+// **机端只上报，没有指令通道**——旧 /poll /command /result（遥控 ops 命令）已删：
+// 自建成以来 0 使用（events.jsonl 无 command 记录），机端收敛为"管理环境+执行任务+上报"后无消费者。
+// 将来若要远程下单，正路是"中心存任务队列、runner 轮询拉队列"（面向任务，不是面向 ops 命令）。
 //
-//   POST /register  {node:{id,ver,host,machines:[...]}}      机端上线登记
-//   POST /report    {node_id,kind:"heartbeat|state|event",data}
-//   GET  /poll?node_id=   （长轮询 ≤25s）→ {commands:[...]}
-//   POST /result    {node_id,id,ok,rc,output}
-//   POST /command   {node_id|"all",cmd,machine,apply}
-//   GET  /fleet     聚合视图（节点/机台/最近事件）
-//   GET  /health    存活（无鉴权）
+//	POST /register  {node:{id,ver,host,machines:[...]}}      机端上线登记
+//	POST /report    {node_id,kind:"state|event",data}       状态/事件上报
+//	GET  /fleet     聚合视图（节点/机台/最近事件）
+//	GET  /health    存活（无鉴权）
 package center
 
 import (
@@ -34,8 +33,6 @@ type Server struct {
 	stateDir string
 	token    string
 	nodes    map[string]*model.Node
-	pending  map[string]*model.Command
-	queues   map[string]chan *model.Command
 }
 
 // New 创建中心服务；stateDir 不存在时自动建，token 缺失时自动生成。
@@ -47,8 +44,6 @@ func New(stateDir, token string) (*Server, error) {
 		stateDir: stateDir,
 		token:    token,
 		nodes:    map[string]*model.Node{},
-		pending:  map[string]*model.Command{},
-		queues:   map[string]chan *model.Command{},
 	}
 	if s.token == "" {
 		if b, err := model.ReadFileBOM(filepath.Join(stateDir, "token.txt")); err == nil {
@@ -67,8 +62,7 @@ func New(stateDir, token string) (*Server, error) {
 func (s *Server) Token() string { return s.token }
 
 type registryFile struct {
-	Nodes   map[string]*model.Node    `json:"nodes"`
-	Pending map[string]*model.Command `json:"pending"`
+	Nodes map[string]*model.Node `json:"nodes"`
 }
 
 func (s *Server) load() {
@@ -77,19 +71,14 @@ func (s *Server) load() {
 		return
 	}
 	var r registryFile
-	if json.Unmarshal(b, &r) == nil {
-		if r.Nodes != nil {
-			s.nodes = r.Nodes
-		}
-		if r.Pending != nil {
-			s.pending = r.Pending
-		}
+	if json.Unmarshal(b, &r) == nil && r.Nodes != nil {
+		s.nodes = r.Nodes
 	}
 }
 
 // save 落盘（调用方需持锁）。
 func (s *Server) saveLocked() {
-	b, _ := json.MarshalIndent(registryFile{Nodes: s.nodes, Pending: s.pending}, "", "  ")
+	b, _ := json.MarshalIndent(registryFile{Nodes: s.nodes}, "", "  ")
 	tmp := filepath.Join(s.stateDir, "registry.tmp")
 	if os.WriteFile(tmp, b, 0o644) == nil {
 		_ = os.Rename(tmp, filepath.Join(s.stateDir, "registry.json"))
@@ -107,17 +96,6 @@ func (s *Server) event(rec map[string]any) {
 	_, _ = f.Write(append(b, '\n'))
 }
 
-func (s *Server) queueFor(nodeID string) chan *model.Command {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	ch, ok := s.queues[nodeID]
-	if !ok {
-		ch = make(chan *model.Command, 64)
-		s.queues[nodeID] = ch
-	}
-	return ch
-}
-
 func now() string { return time.Now().Format("2006-01-02 15:04:05") }
 
 func randomToken() string {
@@ -133,11 +111,8 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/fleet", s.auth(s.handleFleet))
-	mux.HandleFunc("/poll", s.auth(s.handlePoll))
 	mux.HandleFunc("/register", s.auth(s.handleRegister))
 	mux.HandleFunc("/report", s.auth(s.handleReport))
-	mux.HandleFunc("/result", s.auth(s.handleResult))
-	mux.HandleFunc("/command", s.auth(s.handleCommand))
 	return mux
 }
 
@@ -160,41 +135,39 @@ func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	s.mu.Lock()
-	n := len(s.nodes)
+	total, online := len(s.nodes), 0
+	for _, n := range s.nodes {
+		if onlineNow(n) {
+			online++
+		}
+	}
 	s.mu.Unlock()
-	writeJSON(w, 200, map[string]any{"ok": true, "ts": now(), "nodes": n, "impl": "go"})
+	writeJSON(w, 200, map[string]any{"ok": true, "ts": now(), "nodes": total, "online": online, "impl": "go"})
 }
 
 func (s *Server) handleFleet(w http.ResponseWriter, _ *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// online 要按"现在"实时判：存储里的 Online 是写入时刻的快照，机端停掉后会永远停在 true
+	nodes := make(map[string]*model.Node, len(s.nodes))
+	for id, n := range s.nodes {
+		cp := *n
+		cp.Online = onlineNow(n)
+		nodes[id] = &cp
+	}
 	writeJSON(w, 200, map[string]any{
-		"ok": true, "ts": now(), "nodes": s.nodes,
-		"pending": len(s.pending), "events": tailEvents(s.stateDir, 50),
+		"ok": true, "ts": now(), "nodes": nodes,
+		"events": tailEvents(s.stateDir, 50),
 	})
 }
 
-// handlePoll：机端长轮询拉指令（≤25 秒）。
-func (s *Server) handlePoll(w http.ResponseWriter, r *http.Request) {
-	nodeID := r.URL.Query().Get("node_id")
-	if nodeID == "" {
-		writeJSON(w, 400, map[string]any{"ok": false, "error": "node_id_required"})
-		return
+// onlineNow：最近上报新鲜度（机端上报周期 60s，90s 给一拍余量）。
+func onlineNow(n *model.Node) bool {
+	ts, err := time.ParseInLocation("2006-01-02 15:04:05", n.LastSeen, time.Local)
+	if err != nil {
+		return false
 	}
-	s.mu.Lock()
-	if n, ok := s.nodes[nodeID]; ok {
-		n.LastPoll = now()
-	}
-	s.mu.Unlock()
-
-	ch := s.queueFor(nodeID)
-	select {
-	case cmd := <-ch:
-		writeJSON(w, 200, map[string]any{"ok": true, "commands": []*model.Command{cmd}})
-	case <-time.After(25 * time.Second):
-		writeJSON(w, 200, map[string]any{"ok": true, "commands": []any{}})
-	case <-r.Context().Done():
-	}
+	return time.Since(ts) < 90*time.Second
 }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
@@ -267,76 +240,6 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	}
 	s.event(ev)
 	writeJSON(w, 200, map[string]any{"ok": true})
-}
-
-func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
-	body, _ := readBody(r)
-	var req struct {
-		NodeID string `json:"node_id"`
-		ID     string `json:"id"`
-		OK     bool   `json:"ok"`
-		RC     int    `json:"rc"`
-		Output string `json:"output"`
-	}
-	_ = json.Unmarshal(body, &req)
-	s.mu.Lock()
-	if c, ok := s.pending[req.ID]; ok {
-		out := req.Output
-		if len(out) > 4000 {
-			out = out[:4000]
-		}
-		c.Result = &model.Result{OK: req.OK, RC: req.RC, Output: out, TS: now()}
-		c.Done = true
-	}
-	s.saveLocked()
-	s.mu.Unlock()
-	s.event(map[string]any{"kind": "result", "node_id": req.NodeID, "cmd_id": req.ID, "ok": req.OK, "rc": req.RC})
-	writeJSON(w, 200, map[string]any{"ok": true})
-}
-
-func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
-	body, _ := readBody(r)
-	var req struct {
-		NodeID  string `json:"node_id"`
-		Cmd     string `json:"cmd"`
-		Machine string `json:"machine"`
-		Apply   bool   `json:"apply"`
-		Kind    string `json:"kind"`
-	}
-	if err := json.Unmarshal(body, &req); err != nil || req.Cmd == "" {
-		writeJSON(w, 400, map[string]any{"ok": false, "error": "cmd_required"})
-		return
-	}
-	target := req.NodeID
-	if target == "" {
-		target = "all"
-	}
-	s.mu.Lock()
-	var targets []string
-	if target == "all" {
-		for id := range s.nodes {
-			targets = append(targets, id)
-		}
-	} else {
-		targets = []string{target}
-	}
-	s.mu.Unlock()
-
-	queued := make([]string, 0, len(targets))
-	for _, t := range targets {
-		cmd := &model.Command{
-			ID: model.NewID(), TS: now(), Cmd: req.Cmd, Machine: req.Machine,
-			Apply: req.Apply, Kind: req.Kind,
-		}
-		s.mu.Lock()
-		s.pending[cmd.ID] = cmd
-		s.saveLocked()
-		s.mu.Unlock()
-		s.queueFor(t) <- cmd
-		s.event(map[string]any{"kind": "command", "node_id": t, "cmd": cmd})
-		queued = append(queued, cmd.ID)
-	}
-	writeJSON(w, 200, map[string]any{"ok": true, "queued": queued, "targets": targets})
 }
 
 // ---- 工具 ------------------------------------------------------------------

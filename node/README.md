@@ -1,96 +1,80 @@
 # node —— 机端（跑在目标机上）
 
-三层里的 **① 机端**：贴着模拟器干活，向中心上报、从中心拉令。
-（结构全文见 `docs/ARCHITECTURE.md`）
+> 2026-10-02 收敛定稿：**机端只有三件事 —— 管理环境、执行任务、上报。**
+> 收敛前的"接令代理 / worker 守夜 / 隧道驱动"已全部删除（见文末"已退役"）。
+
+## 三件事，一个进程
+
+机端 = **`fleet.exe`**（一个二进制，跑在贴着模拟器的那台机器上）：
+
+| 职能 | 命令 | 说明 |
+|---|---|---|
+| **管理环境** | `fleet setup` / `fleet env` / `fleet gen` | maa-cli 安装、模拟器实例配置收敛、账号表/任务文件生成 |
+| **执行任务** | `fleet runner` | daily / ann 排队 + rogue 常驻车道 + 设备生命周期 + 自愈；**唯一常驻进程** |
+| **上报** | （runner 内建） | 启动注册、每 60s 状态（调度口径 + 设备体检）、任务事件；只做出站连接 |
+
+设备体检（随状态上报）：maa pid（runner 自己的发车记录）、状态日志年龄（`asst.log` mtime）、
+游戏 pid（adb pidof，只对"常驻机 + 有任务在跑的机"查）。
+
+**边界**（不做的事）：不渲染界面；不做全局策略裁决；不驱动别的机器；不接中心遥控指令
+（任务的增删改在机端本地做：`fleet runner -enqueue/-cancel/-now/...`）。
 
 ```
-中心(center, 常开)◄── 注册/心跳/状态/事件 ── 机端(node, 目标机)
-        ▲                    └── 拉令/回执 ──►（执行 ops 命令，驱动模拟器）
-        └── REST ── 前端(console, 暂缓)/CLI/Agent
+                       ┌─────────────── 目标机 ───────────────┐
+   center(常开) ◄────────┤ fleet.exe runner（调度 + 上报）      │
+   :8790                │   └─ MuMuManager / adb / maa.exe     │
+   （只收上报，无指令通道）└────────────────────────────────────┘
 ```
 
-## 文件
+## 目录
 
 | 文件 | 作用 |
 |---|---|
-| `fleet_node.ps1` | 机端本体：`run`（常驻）/ `once`（单轮）/ `status` / `stop` |
-| `conf.json` | 机端配置（含 token，**不入库**；模板见 `conf.example.json`） |
-| `install_target.ps1` | 一键布点：拉 GitHub 包 → 解压 → 写配置 → adb connect → 拉起机端 |
-| `node.log` / `node.pid` / `node.stop` | 运行态 |
+| `install_target.ps1` | 一键布点：拉包 → 放 `fleet.exe` → 写 `runner\runner.json` → 注册计划任务 → 拉起 |
+| （运行时）`runner\runner.json` | 机端配置（本机路径 / center 地址 / nodeId；**不入库**） |
+| （运行时）`ops\boot_runner.ps1` | 开机自启 + 看门狗：只保证 runner 进程在岗且没卡死（心跳超时则杀掉重拉） |
 
-## 机端在干什么（每轮）
-
-1. **注册**（每 10 分钟）：`node_id` / 机型表 → 中心；
-2. **状态上报**：跑一次 `ops status`（本地模式=直连模拟器）→ 结构化上报（maa/日志年龄/连通/游戏 pid/健康）；
-3. **事件增量**：把 `ops\rogue_cli_ops.log` 新增行同步给中心；
-4. **拉令**（长轮询 ≤25s）：拿中心指令 → 执行 → 回执。**写指令需 `apply=true` 才真跑**（否则只回 dry-run 计划）。
-
-## 布点（目标机）
+## 布点
 
 ```powershell
 # 目标机上（管理员 PowerShell）
-.\install_target.ps1 -NodeId host-01 `
-  -CenterUrl http://<中心内部地址>:8790 -Token <center/state/token.txt 的内容>
+.\install_target.ps1 -NodeId node-01 -CenterUrl http://<后端内部地址>:8790 -Token <center/state/token.txt 的内容>
 ```
 
-要点：
-- **资源目录**：目标机的 `<项目>\data` 下必须有 `lib` 与 `resource`（maa-cli 按 `MAA_DATA_DIR` 找）。
-  安装过 maa-cli 的机器一般已有现成的（`%APPDATA%\loong\maa\data\{lib,resource}`）——
-  脚本会自动建 **junction** 指过去（别复制几百 MB）；缺了 maa 会报 `Resource directory not found!` 秒退。
-- **包走 GitHub**（`codeload.../zip/refs/heads/master`），不走慢速 ssh；
-- 解压**不会覆盖**本地配置（`config/fleet.local.json`、`node/conf.json` 都不在包里）；
-- 同机已有 maa-cli（如 `E:\MAA-CLI\bin\maa.exe`）会被**复用**，不搬大文件；
-- 常驻进程用 **WMI `Win32_Process Create`** 拉起（`Start-Process` 起的子进程会随 ssh 会话结束被杀）。
+计划任务（由 install_target 注册，两件套）：
 
-## 本机模式（目标机上不再走隧道）
+| 任务 | 触发器 | 动作 |
+|---|---|---|
+| `FleetRunner-AutoStart` | AtLogon（当前用户 / Interactive / Highest） | `ops\boot_runner.ps1` |
+| `FleetRunner-Watchdog` | 每 10 分钟、无限重复、IgnoreNew | 同上（幂等） |
 
-`config/fleet.local.json`：
+判活两道：**进程在**（认命令行身份，不靠单一 PID——防 PID 复用误判）+ **还在干活**
+（`runner\heartbeat.txt` mtime 超时 = 主循环卡死 → 杀掉重拉）。人工停用 `runner\runner.stop`（存在即不拉）。
 
-```json
-{
-  "localMode": true,
-  "adbPath": "E:\\MuMu Player 12\\shell\\adb.exe",
-  "maaExe":  "E:\\MAA-CLI\\bin\\maa.exe",
-  "machines": [ {"name":"l-1","emu":"25","state":"state_l1","rogue":"rogue_sami_l1","daily":"daily_l1","local":"17184"} ]
-}
+## 运行
+
+```powershell
+fleet.exe runner -conf runner\runner.json     # 常驻（计划任务负责，不必手起）
+fleet.exe runner -status                      # 看一眼队列（不启动任务）
+fleet.exe runner -enqueue daily:l4            # 手工插一次日常
+fleet.exe runner -cancel ann:l4 / -now daily:a07 / -disable daily:a07 / -enable daily:a07
 ```
 
-- `localMode=true` → `Invoke-HostPs` 本地跑、`Test-Tunnel` 改判 adb 直连、`recover` 不再建 ssh 隧道；
-- `machines` 可覆盖机器表（本机模式下 `local` = 模拟器在该机上的 adb 端口）；
-- 默认（不设 localMode）仍是"本机经 ssh 隧道驱动"的老模式，两种模式同一份 ops 脚本。
+数据归属：账号表 / 状态 / 任务文件 / 日志全在本机（`runner\*`、`config\tasks\*`、`data\*`）；
+center 只持有它上报的台账与事件。
 
+## 已退役（2026-10-02 收敛时删除）
 
-## 开机自恢复（目标机重启/蓝屏后无人介入）
+| 对象 | 曾经的职责 | 为什么不需要 |
+|---|---|---|
+| `fleet_node.ps1`（PS 机端代理） | 注册/心跳/状态/事件 + **拉中心指令** | 上报已由 runner 内建；指令通道自建成后 **0 使用**（events.jsonl 无 command 记录），删 |
+| `ops\boot_node.ps1` + `FleetNode-*` 计划任务 | 保证机端进程在岗 | 机端只剩 runner 一个进程，`boot_runner.ps1` 已覆盖 |
+| `internal/node`（Go 代理包） | PS 桥：调 `ops status` 采集设备状态 | 设备状态改由 runner 原生采集（`internal/runner/health.go`），不再经 PS |
+| `Ensure-Workers` / cycle/watch worker | 机端守夜拉起 PS worker | PS worker 全量退役（10-02 20:45 5/5 迁入 runner） |
+| 隧道驱动（本机 ssh 连目标机） | 从别的机器驱动模拟器 | 机端只在**本机**驱动；跨机=再布一台机端 |
 
-```
-开机/登录 → 计划任务 FleetNode-AutoStart → opsoot_node.ps1 → 机端
-                                                              ↓ Ensure-Workers
-                                        cycle/watch worker（缺失就拉起）
-                                                              ↓ Watch-Once 设备级自愈
-                                        模拟器 → adb connect → maa 任务 → 上报中心
-```
+## 坑（保留，仍在用）
 
-- **计划任务**（照抄本机 AUTO-MAS 那套可用配置）：
-  `Administrator / Interactive / Highest / AtLogon` →
-  `powershell -NoProfile -ExecutionPolicy Bypass -File <项目>\opsoot_node.ps1`
-- `boot_node.ps1`：幂等；只保证"机端进程在"（已在跑就跳过），其余交给机端/worker。
-- 机端 `conf.json` 加 `workers` 映射（例：`{"l-1":"cycle",...,"l-5":"watch"}`）：
-  机端启动时 + 每 10 步检查 worker pid，不在岗就拉起。
-- **实测（2026-10-01）**：杀掉机端+全部 worker → 跑 boot 脚本 → 机端 1 + worker 5 全自动回来。
-- 蓝屏后实测：07:31:36 拉起 → 07:33:28 五台模拟器+任务全部恢复（约 2 分钟）。
-- **看门狗（防机端自身意外退出，2026-10-02 加）**：计划任务 `FleetNode-Watchdog`——每 10 分钟、无限重复、`IgnoreNew`，跑同一个 `boot_node.ps1`（幂等）。
-  实测：注册后试跑 `LastResult=0`，日志 `[10-02 06:14:21] 机端已在跑（pid=30120），跳过`，无副作用。
-- **重启自愈链（2026-10-02 全链路实测）**：自动登录（boot 后 ~4s Administrator type-2）→ `FleetNode-AutoStart`（~5s 后触发，rc=0）→ 机端 → `Ensure-Workers`（判活含进程身份校验，见 commit `a168c9e`）→ worker → 模拟器 → 任务。
-
-### 部署坑（重要）
-- **`.ps1` 必须带 UTF-8 BOM**：PowerShell 5.1 读无 BOM 文件按本地编码解析，中文字符串会被读坏
-  （症状：WMI 拉起机端返回 `rc=21 无效参数`）。仓库内 .ps1 已统一带 BOM；
-  从 GitHub raw 下载后建议再强制转一次 BOM：
-  `[IO.File]::WriteAllText($p, [IO.File]::ReadAllText($p,[Text.Encoding]::UTF8), (New-Object Text.UTF8Encoding($true)))`
-
-## 当前部署（2026-10-01）
-
-| 机端 | 机器 | 中心 | 备注 |
-|---|---|---|---|
-| `local-desktop` | 本机（隧道模式，驱动全队） | `127.0.0.1:8790` | 现役控制方 |
-| `host-01` | 主机 HOST-01（本机模式） | `http://<CENTER_IP>:8790` | 已布点、只读上报（尚未接管任务） |
+- **`.ps1` 必须带 UTF-8 BOM**：PowerShell 5.1 读无 BOM 文件按本地编码解析，中文字符串会被读坏。
+  仓库内 `.ps1` 已统一带 BOM；从 GitHub raw 下载后建议再强制转一次 BOM。
+- 常驻进程用 **WMI `Win32_Process Create`** 拉起（`Start-Process` 的子进程会随 ssh 会话结束被杀）。

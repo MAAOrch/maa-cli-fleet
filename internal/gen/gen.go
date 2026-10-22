@@ -1,10 +1,12 @@
 // Package gen —— 从 AUTO-MAS 配置生成我们的账号表与任务文件（Go 版，取代 PS 生成器）。
 //
 // 读 E:\AUTO-MAS\config\ScriptConfig.json，写：
-//   runner/accounts.json            账号表（id/名字/服务器/关卡/剿灭/实例）
-//   config/tasks/daily_<id>.toml    日常任务（6 段链）
-//   config/tasks/ann_<id>.toml      剿灭作战（仅开启的）
-//   config/profiles/<client>.toml   每服务器一份 profile
+//
+//	runner/accounts.json            账号表（id/名字/服务器/关卡/剿灭/实例）
+//	config/tasks/daily_<id>.toml    日常任务（6 段链）
+//	config/tasks/ann_<id>.toml      剿灭作战（仅开启的）
+//	config/profiles/<client>.toml   每服务器一份 profile
+//
 // 凭据（手机号/邮箱）一律不落盘。
 package gen
 

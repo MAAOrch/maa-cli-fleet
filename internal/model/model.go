@@ -3,8 +3,6 @@ package model
 
 import (
 	"bytes"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"os"
 )
@@ -19,26 +17,6 @@ func ReadFileBOM(path string) ([]byte, error) {
 	return bytes.TrimPrefix(b, []byte{0xEF, 0xBB, 0xBF}), nil
 }
 
-// Result 指令回执。
-type Result struct {
-	OK     bool   `json:"ok"`
-	RC     int    `json:"rc"`
-	Output string `json:"output,omitempty"`
-	TS     string `json:"ts"`
-}
-
-// Command 中心 → 机端的一条指令。
-type Command struct {
-	ID      string  `json:"id"`
-	TS      string  `json:"ts"`
-	Cmd     string  `json:"cmd"`
-	Machine string  `json:"machine,omitempty"`
-	Apply   bool    `json:"apply"`
-	Kind    string  `json:"kind,omitempty"`
-	Done    bool    `json:"done,omitempty"`
-	Result  *Result `json:"result,omitempty"`
-}
-
 // Heartbeat 心跳载荷。
 type Heartbeat struct {
 	TS   string          `json:"ts"`
@@ -47,15 +25,15 @@ type Heartbeat struct {
 
 // Node 机端台账条目。
 type Node struct {
-	ID        string         `json:"id"`
-	Ver       string         `json:"ver,omitempty"`
-	Host      string         `json:"host,omitempty"`
+	ID        string          `json:"id"`
+	Ver       string          `json:"ver,omitempty"`
+	Host      string          `json:"host,omitempty"`
 	Machines  json.RawMessage `json:"machines,omitempty"`
-	State     map[string]any `json:"state,omitempty"`
-	Heartbeat *Heartbeat     `json:"heartbeat,omitempty"`
-	LastSeen  string         `json:"last_seen,omitempty"`
-	LastPoll  string         `json:"last_poll,omitempty"`
-	Online    bool           `json:"online"`
+	State     map[string]any  `json:"state,omitempty"`
+	Heartbeat *Heartbeat      `json:"heartbeat,omitempty"`
+	LastSeen  string          `json:"last_seen,omitempty"`
+	LastPoll  string          `json:"last_poll,omitempty"`
+	Online    bool            `json:"online"`
 }
 
 // MachineState 一台机的状态（机端上报）。
@@ -97,11 +75,4 @@ type AccountsFile struct {
 	GeneratedAt string    `json:"generatedAt"`
 	Slots       int       `json:"slots"`
 	Accounts    []Account `json:"accounts"`
-}
-
-// NewID 生成一个短指令 id（形如 c1a2b3c4）。
-func NewID() string {
-	b := make([]byte, 4)
-	_, _ = rand.Read(b)
-	return "c" + hex.EncodeToString(b)
 }

@@ -1,14 +1,16 @@
 // fleet —— 机队一体化命令行（Go 主语言）
 //
-// 子命令：
-//   fleet center   后端（中心服务：台账/指令/审计/API）
-//   fleet node     机端（心跳/拉令/拉起 worker）        [阶段 1 晚些]
-//   fleet runner   槽位轮转调度器（49 账号日常）        [阶段 1 晚些]
-//   fleet gen      从 AUTO-MAS 配置生成账号表/任务文件   [阶段 1 晚些]
-//   fleet version  版本
+// 机端（跑在目标机上）的职能只有三件：管理环境、执行任务、上报。
 //
-// 设计原则（见 docs/GO-MIGRATION.md）：Go 拿"大脑与骨架"，PowerShell 只做"手脚"
-// （设备/模拟器现场操作），Go 通过 `ops.ps1 -Json` 调它，PS 不持有状态。
+//	fleet setup/env/gen  管理环境（maa 安装、模拟器实例、账号表/任务文件）
+//	fleet runner         执行任务（daily / ann / rogue 调度 + 设备生命周期）并上报 center
+//
+// 后端（常开一台）：
+//
+//	fleet center         中心服务（台账 / 事件 / 对外 API）
+//	fleet version        版本
+//
+// 机端不需要接令代理、不需要 worker 守夜、不碰别的机器 —— 收敛于 2026-10-02。
 package main
 
 import (
@@ -22,7 +24,6 @@ import (
 	"github.com/xiachk083-hub/maa-cli-fleet/internal/center"
 	"github.com/xiachk083-hub/maa-cli-fleet/internal/env"
 	"github.com/xiachk083-hub/maa-cli-fleet/internal/gen"
-	"github.com/xiachk083-hub/maa-cli-fleet/internal/node"
 	"github.com/xiachk083-hub/maa-cli-fleet/internal/runner"
 	"github.com/xiachk083-hub/maa-cli-fleet/internal/setup"
 )
@@ -109,8 +110,16 @@ func main() {
 			}
 			return
 		}
+		if v := flagValue(args, "-maintenance", ""); v != "" {
+			if err := runner.SetMaintenance(cfg, v); err != nil {
+				fmt.Fprintln(os.Stderr, "维护开关失败：", err)
+				os.Exit(1)
+			}
+			return
+		}
 		if hasFlag(args, "-status") {
 			r.Status()
+			r.LogRoster()
 			r.LogPlan()
 			return
 		}
@@ -126,14 +135,6 @@ func main() {
 			}
 		}()
 		r.Run(false)
-	case "node":
-		conf := flagValue(args, "-conf", filepath.Join(root, "node", "conf.json"))
-		n, err := node.New(conf)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "node 启动失败：", err)
-			os.Exit(1)
-		}
-		n.Run()
 	case "env":
 		c := env.Cfg{
 			MuMuManager: flagValue(args, "-mumu", "E:\\MuMu Player 12\\nx_main\\MuMuManager.exe"),
@@ -202,7 +203,7 @@ func usage() {
   fleet center [-addr 0.0.0.0:8790] [-state <目录>] [-token <密钥>]
   fleet setup  [-root <项目>] [-data <MAA_DATA_DIR>] [-force] [-channel stable]
   fleet runner [-conf <runner.json>] [-status] [-once] [-enqueue k:id] [-cancel key]
-  fleet node   [-conf <conf.json>]
+              [-maintenance on|off|status]   # 维护模式：人在手工登号/排障时用（不派车、不关模拟器）
   fleet gen    [-automas <AUTO-MAS 目录>] [-dry]
   fleet version
 

@@ -1,6 +1,9 @@
-# rogue_mizuki_l7.toml — l-7（主机 idx52/17028，日服）水月肉鸽 · 一直刷
+# rogue_mizuki_l7.toml — 文件名保留给当前 runner 内存绑定（l7.rogueTask 重启前仍是这个名字）
 #
-# 用户 2026-09-30 指示：l-7 也刷水月。配置沿用水月标准：难度3 / 维什戴尔 / 先手必胜 / 借干员+非好友助战 / 不投资。
+# 用户 2026-10-11：l-7 萨卡兹刷完，换成萨米。正式任务文件是 rogue_sami_l7.toml
+# （accounts.json 已指向它；本文件内容与其一致，避免重启前车道重发仍读到萨卡兹）。
+# 配装同 l-1：难度 MAX / 维什戴尔 / 先手必胜 / 借干员+非好友助战 / 不投资。
+# 回滚：恢复同目录 *.bak-20261011-l7sami 后杀掉 l-7 的 maa，车道会重发。
 
 [[tasks]]
 name = "StartUp"
@@ -11,10 +14,10 @@ params = { client_type = "YoStarJP", start_game_enabled = true }
 name = "Roguelike 无限"
 type = "Roguelike"
 params = {
-  theme = "Mizuki",
+  theme = "Sami",
   mode = 0,
   starts_count = 99999,
-  difficulty = 3,
+  difficulty = 2147483647,
   core_char = "维什戴尔",
   roles = "先手必胜",
   use_support = true,
