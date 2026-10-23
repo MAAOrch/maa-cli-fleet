@@ -77,6 +77,17 @@ queues=14 official=7 temporary=0 archived=7 enabled=7
 pathConflicts=0 duplicateScripts=0
 ```
 
+配置前后对账（`tools/mas_reorch_compare.py --check-password`）：
+
+```text
+checked=51 user_issues=0 script_issues=0
+```
+
+- 51 个账号的 `Stage` / `Task` / `Notify` 整段未变；
+- `Info.Name/Id/Server/Notes/Status/RemainedDay` 未变；
+- 密码密文会因运行后重新 DPAPI 加密而变化，但解密后的明文一致；
+- 脚本级只允许 `Info.Name` / `Info.Path` 变化，实际无其它字段变化。
+
 `并行3/4` 显示 `REVIEW` 是因为它们各用两个 MAA 核心（MAA 池），属于预期。
 
 ## Canary
@@ -113,6 +124,7 @@ pathConflicts=0 duplicateScripts=0
 | `tools/mas_reorch_apply.py` | 去重、归档、重建队列、MAA 池（Plan/Apply） |
 | `tools/mas_reorch_base.py` | 物化独立 ConfigFile 并切 `Base=independent` |
 | `tools/mas_reorch_verify.py` | 重排后全项对账 |
+| `tools/mas_reorch_compare.py` | 重排前后账号业务字段对账 |
 | `tools/mas_reorch_schedule.py` | 错峰定时与启用队列 |
 | `tools/mas_reorch_cleanup.py` | 清归档队列重复项、正式脚本排前 |
 | `tools/mas_reorch_fix_archive.py` | 补归档被锁脚本 |
