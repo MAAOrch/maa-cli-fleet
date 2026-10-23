@@ -1,6 +1,7 @@
 import collections
 import io
 import json
+import sys
 import urllib.request
 
 API = 'http://127.0.0.1:36163'
@@ -23,6 +24,8 @@ def data(path, body):
 
 plan = json.load(io.open(PLAN, encoding='utf-8'))
 checks = []
+ALLOW_ENABLED = '--allow-enabled' in sys.argv
+ALLOW_ACTIVE = '--allow-active' in sys.argv
 
 
 def check(name, ok, detail=''):
@@ -37,8 +40,9 @@ queues = {qid: q for qid, q in qraw.items() if qid != 'instances' and isinstance
 
 off_q = {qid: q for qid, q in queues.items() if str((q.get('Info') or {}).get('Name') or '').startswith('并行')}
 check('official queue count', len(off_q) == 7, len(off_q))
-check('all queues paused', all(not (q.get('Info') or {}).get('TimeEnabled') for q in off_q.values()),
-      [(q.get('Info') or {}).get('Name') for q in off_q.values() if (q.get('Info') or {}).get('TimeEnabled')])
+if not ALLOW_ENABLED:
+    check('all queues paused', all(not (q.get('Info') or {}).get('TimeEnabled') for q in off_q.values()),
+          [(q.get('Info') or {}).get('Name') for q in off_q.values() if (q.get('Info') or {}).get('TimeEnabled')])
 
 items_by_queue = {}
 for qid, q in off_q.items():
@@ -133,7 +137,8 @@ check('maa path not shared across queues', not cross, cross)
 
 # runtime
 snap = json.load(urllib.request.urlopen(API + '/api/dispatch/runtime-snapshot', timeout=60))
-check('no active dispatch task', not snap.get('tasks'), [t.get('taskId') for t in snap.get('tasks', [])])
+if not ALLOW_ACTIVE:
+    check('no active dispatch task', not snap.get('tasks'), [t.get('taskId') for t in snap.get('tasks', [])])
 
 failed = [c for c in checks if not c[1]]
 print('')
