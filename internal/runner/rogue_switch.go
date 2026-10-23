@@ -30,14 +30,15 @@ func (l *rogueLane) taskName() string {
 	if l.task != "" {
 		return l.task
 	}
-	return l.acc.RogueTask
+	return l.acc.ResidentTaskFile()
 }
 
-// switchTask 更新任务名；如果当前有 maa 在跑，标记 switching 并把 run 返回给调用方 kill。
+// switchTask 更新任务名（同时刷新看板标签）；如果当前有 maa 在跑，标记 switching 并把 run 返回给调用方 kill。
 func (l *rogueLane) switchTask(name string) *maaRun {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.task = name
+	l.label = residentLabel(name)
 	if l.run != nil {
 		l.switching = true
 	}
@@ -62,7 +63,8 @@ func (l *rogueLane) takeSwitch() bool {
 	return false
 }
 
-// SetRogue 热切换某账号的肉鸽任务。只允许现有常驻车道；任务文件必须已存在。
+// SetRogue 热切换某账号的常驻任务（肉鸽/卫戍协议等）。
+// 已有车道就热切换；账号已启用但还没有车道（刚配置 residentTask）则直接起一条，不用重启 runner。
 func (r *Runner) SetRogue(accountID, task string) error {
 	accountID = strings.TrimSpace(accountID)
 	task, err := normalizeTaskName(task)
@@ -103,40 +105,41 @@ func (r *Runner) SetRogue(accountID, task string) error {
 	if !acc.Enabled {
 		return fmt.Errorf("账号 %s 已停用", accountID)
 	}
-	if lane == nil {
-		return fmt.Errorf("账号 %s 没有常驻肉鸽车道（先配置 rogueTask 并重启 runner）", accountID)
-	}
-	if lane.stopped() {
-		return fmt.Errorf("账号 %s 的肉鸽车道已停止", accountID)
+	if lane != nil && lane.stopped() {
+		return fmt.Errorf("账号 %s 的常驻任务车道已停止", accountID)
 	}
 
-	oldTask := lane.taskName()
-	if oldTask == task {
-		log.Printf("[rogue:%s] 已是任务 %s，跳过热切换", accountID, task)
+	if lane != nil {
+		oldTask := lane.taskName()
+		if oldTask == task {
+			log.Printf("[%s:%s] 已是任务 %s，跳过热切换", lane.labelText(), accountID, task)
+			return nil
+		}
+		if err := updateAccountsResidentTask(r.cfg.AccountsFile, accountID, task); err != nil {
+			return fmt.Errorf("写 accounts.json 失败：%w", err)
+		}
+		r.mu.Lock()
+		r.accounts[idx].ResidentTask = task
+		r.accounts[idx].RogueTask = ""
+		if r.state != nil && r.state.Tasks != nil {
+			if t := r.state.Tasks["rogue:"+accountID]; t != nil {
+				t.File = task
+				t.Note = "热切换：" + task
+			}
+		}
+		r.mu.Unlock()
+
+		run := lane.switchTask(task)
+		log.Printf("[%s:%s] 热切换任务 %s → %s", lane.labelText(), accountID, oldTask, task)
+		if run != nil && run.cmd != nil && run.cmd.Process != nil {
+			log.Printf("[%s:%s] 停止旧任务 maa pid=%d，等待车道重发", lane.labelText(), accountID, run.cmd.Process.Pid)
+			killMaa(run)
+		}
 		return nil
 	}
 
-	if err := updateAccountsRogueTask(r.cfg.AccountsFile, accountID, task); err != nil {
-		return fmt.Errorf("写 accounts.json 失败：%w", err)
-	}
-
-	r.mu.Lock()
-	r.accounts[idx].RogueTask = task
-	if r.state != nil && r.state.Tasks != nil {
-		if t := r.state.Tasks["rogue:"+accountID]; t != nil {
-			t.File = task
-			t.Note = "热切换：" + task
-		}
-	}
-	r.mu.Unlock()
-
-	run := lane.switchTask(task)
-	log.Printf("[rogue:%s] 热切换任务 %s → %s", accountID, oldTask, task)
-	if run != nil && run.cmd != nil && run.cmd.Process != nil {
-		log.Printf("[rogue:%s] 停止旧任务 maa pid=%d，等待车道重发", accountID, run.cmd.Process.Pid)
-		killMaa(run)
-	}
-	return nil
+	// 还没有车道：不再自动起（避免在 -status/测试进程里误拉设备）；改 accounts.json 后重启 runner。
+	return fmt.Errorf("账号 %s 没有常驻任务车道（先配置 residentTask/rogueTask 并重启 runner）", accountID)
 }
 
 // normalizeTaskName 只接受简单任务名（可带 .toml 后缀），防止路径穿越。
@@ -149,8 +152,9 @@ func normalizeTaskName(s string) (string, error) {
 	return s, nil
 }
 
-// updateAccountsRogueTask 只改目标账号的 rogueTask，保留 accounts.json 里的其他字段与顺序。
-func updateAccountsRogueTask(path, accountID, task string) error {
+// updateAccountsResidentTask 只改目标账号的 residentTask（并清掉旧 rogueTask），
+// 保留 accounts.json 里的其他字段与顺序。
+func updateAccountsResidentTask(path, accountID, task string) error {
 	if path == "" {
 		return fmt.Errorf("未配置 accountsFile")
 	}
@@ -175,7 +179,8 @@ func updateAccountsRogueTask(path, accountID, task string) error {
 	for _, a := range accounts {
 		var id string
 		if json.Unmarshal(a["id"], &id) == nil && id == accountID {
-			a["rogueTask"] = rawJSONString(task)
+			a["residentTask"] = rawJSONString(task)
+			delete(a, "rogueTask")
 			found = true
 			break
 		}

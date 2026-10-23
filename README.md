@@ -14,7 +14,8 @@
 
 - **三类任务一个模型**
   - `daily` / `ann`：排队型，跑一次结束，按理智或周次排下一次；
-  - `rogue`：常驻型，跑完 / 挂了 / 卡死就立刻重来，模拟器不关机。
+  - `rogue` / `resident`：常驻型，跑完 / 挂了 / 卡死就立刻重来，模拟器不关机；
+    除肉鸽外也用于**卫戍协议**（`MiniGame@SPA`）等可以一直刷的玩法。
 - **日常插队**：日常到点会暂停肉鸽（只杀 maa，不动模拟器），跑完自动接回。
 - **设备自愈**：起模拟器 → 等 boot → adb connect → 端口漂移识别 → 发车；连续失败会硬重启模拟器。
 - **看护判据**：进程退出 / `asst.log` 5 分钟不更新 / 同一 `cur_task` 空转 8 分钟 → 杀 maa 重来。
@@ -128,7 +129,7 @@ notepad runner\accounts.json
 |---|---|---|
 | `daily` | 跑一次结束；理智快满 / 班表到点再跑 | `daily` |
 | `ann` | 每周一次；`annDisabled=true` 可整体关闭 | `annTask` |
-| `rogue` | 常驻；退出/卡死立刻重来，不被并发位限制 | `rogueTask` + `resident` |
+| `rogue` / `resident` | 常驻；退出/卡死立刻重来，不被并发位限制 | `residentTask`（或旧 `rogueTask`）+ `resident` |
 
 - **互斥**：同一账号同一时刻只跑一个任务；日常插队会暂停该账号的肉鸽车道。
 - **重试**：每个任务最多 3 次；失败超过次数后等下一个游戏日/周再排。
@@ -151,7 +152,7 @@ notepad runner\accounts.json
 | `fleet runner -status` | 查看队列 / 班表 / 资源 |
 | `fleet runner -once` | 只跑一轮 |
 | `fleet runner -enqueue daily:a01` | 手工插队一次日常 |
-| `fleet runner -set-rogue l7:rogue_jiegarden_l7` | 热切换某账号的肉鸽任务（只动该车道） |
+| `fleet runner -set-rogue l7:rogue_jiegarden_l7` | 热切换某账号的常驻任务（`-set-resident` 同义） |
 | `fleet runner -now daily:a01` | 把已排任务提前到现在 |
 | `fleet runner -cancel daily:a01` | 取消任务 |
 | `fleet runner -reset daily:a01` | 重置失败次数并重排 |
@@ -217,6 +218,7 @@ data/、ops/logs/、shots/  # 状态、日志、截图
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — 三层结构（历史设计 + 收敛记录）
 - [`docs/ARCHITECTURE-NODE-SELF.md`](docs/ARCHITECTURE-NODE-SELF.md) — 机端边界铁律
 - [`docs/RUNNER-UNIFIED-TASKS.md`](docs/RUNNER-UNIFIED-TASKS.md) — daily / ann / rogue 统一模型与实测记录
+- [`docs/SPA-RESIDENT.md`](docs/SPA-RESIDENT.md) — 卫戍协议常驻（进场导航 + 日常轮换）
 - [`docs/DAILY-ROSTER.md`](docs/DAILY-ROSTER.md) — 16h 连续班表
 - [`docs/OPS-AUTOSTART.md`](docs/OPS-AUTOSTART.md) — 开机 / 看门狗
 - [`docs/TUTORIAL-AUTOCLOSE.md`](docs/TUTORIAL-AUTOCLOSE.md) — 教程弹窗自动关闭（可选）

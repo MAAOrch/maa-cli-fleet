@@ -1,0 +1,118 @@
+{
+  "MAAOrch@SPA@Enter": {
+    "doc": "台服卫戍协议进场导航：大厅活动横幅 -> 关闭活动介绍 -> 放弃旧存档 -> 独立模拟",
+    "algorithm": "JustReturn",
+    "retry_times": 120,
+    "next": [
+      "MAAOrch@SPA@EnterIndependent",
+      "MAAOrch@SPA@Retire",
+      "MAAOrch@SPA@ConfirmRetire",
+      "MAAOrch@SPA@ReturnHome",
+      "MAAOrch@SPA@CloseIntro",
+      "MAAOrch@SPA@ClickBanner",
+      "MAAOrch@SPA@ClickBannerOcr",
+      "MAAOrch@SPA@Back"
+    ]
+  },
+  "MAAOrch@SPA@ClickBannerOcr": {
+    "doc": "兜底：横幅换图/动画时用 OCR 认「衛戍協議」",
+    "algorithm": "OcrDetect",
+    "action": "ClickSelf",
+    "text": ["衛戍協議", "卫戍协议", "衛戍协议", "卫戍協議"],
+    "roi": [1000, 100, 280, 180],
+    "postDelay": 2500,
+    "next": [
+      "MAAOrch@SPA@CloseIntro",
+      "MAAOrch@SPA@Retire",
+      "MAAOrch@SPA@EnterIndependent",
+      "MAAOrch@SPA@ClickBannerOcr"
+    ]
+  },
+  "MAAOrch@SPA@ClickBanner": {
+    "algorithm": "MatchTemplate",
+    "template": "MAAOrch/SPABannerTxwy.png",
+    "templThreshold": 0.75,
+    "roi": [1000, 100, 280, 180],
+    "action": "ClickSelf",
+    "postDelay": 2500,
+    "next": [
+      "MAAOrch@SPA@CloseIntro",
+      "MAAOrch@SPA@Retire",
+      "MAAOrch@SPA@EnterIndependent",
+      "MAAOrch@SPA@ClickBanner"
+    ]
+  },
+  "MAAOrch@SPA@CloseIntro": {
+    "algorithm": "MatchTemplate",
+    "template": "MAAOrch/SPACloseTxwy.png",
+    "templThreshold": 0.8,
+    "roi": [40, 60, 280, 120],
+    "action": "ClickSelf",
+    "postDelay": 2500,
+    "next": [
+      "MAAOrch@SPA@Retire",
+      "MAAOrch@SPA@EnterIndependent",
+      "MAAOrch@SPA@CloseIntro"
+    ]
+  },
+  "MAAOrch@SPA@Retire": {
+    "algorithm": "MatchTemplate",
+    "template": "MAAOrch/SPARetireTxwy.png",
+    "templThreshold": 0.8,
+    "roi": [700, 590, 360, 120],
+    "action": "ClickSelf",
+    "postDelay": 2000,
+    "next": [
+      "MAAOrch@SPA@ConfirmRetire",
+      "MAAOrch@SPA@Retire"
+    ]
+  },
+  "MAAOrch@SPA@ConfirmRetire": {
+    "algorithm": "MatchTemplate",
+    "template": "MAAOrch/SPAConfirmTxwy.png",
+    "templThreshold": 0.8,
+    "roi": [850, 430, 320, 120],
+    "action": "ClickSelf",
+    "postDelay": 4000,
+    "next": [
+      "MAAOrch@SPA@ReturnHome",
+      "MAAOrch@SPA@ConfirmRetire"
+    ]
+  },
+  "MAAOrch@SPA@ReturnHome": {
+    "algorithm": "MatchTemplate",
+    "template": "MAAOrch/SPAHomeTxwy.png",
+    "templThreshold": 0.8,
+    "roi": [950, 600, 330, 120],
+    "action": "ClickSelf",
+    "postDelay": 3000,
+    "next": [
+      "MAAOrch@SPA@EnterIndependent",
+      "MAAOrch@SPA@ReturnHome"
+    ]
+  },
+  "MAAOrch@SPA@EnterIndependent": {
+    "algorithm": "MatchTemplate",
+    "template": "MAAOrch/SPAIndependentTxwy.png",
+    "templThreshold": 0.8,
+    "roi": [480, 560, 380, 160],
+    "action": "ClickSelf",
+    "postDelay": 2000,
+    "next": [
+      "MiniGame@SPA@EnterStandard",
+      "MiniGame@SPA@EnterDanger",
+      "MiniGame@SPA@StartSimulation",
+      "MAAOrch@SPA@Retire",
+      "#self"
+    ]
+  },
+  "MAAOrch@SPA@Back": {
+    "algorithm": "MatchTemplate",
+    "template": "Return.png",
+    "templThreshold": 0.7,
+    "roi": [0, 0, 180, 80],
+    "action": "ClickSelf",
+    "postDelay": 1500,
+    "next": ["MAAOrch@SPA@Enter"]
+  }
+}

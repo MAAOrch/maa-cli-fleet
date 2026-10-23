@@ -29,10 +29,11 @@ func (r *Runner) runTask(t *Task) {
 	start := time.Now()
 	log.Printf("[%s] 开始 %s（%s，第 %d 次）", t.Key, acc.Name, t.Kind, t.Attempts)
 
-	// 常驻机（肉鸽）：日常要插队 —— 先暂停肉鸽（杀 maa，模拟器不动），跑完自动接回
-	if acc.Resident || acc.RogueTask != "" {
+	// 常驻任务机（肉鸽/卫戍协议）：日常要插队 —— 先暂停常驻任务（杀 maa，模拟器不动），跑完自动接回
+	resident := acc.Resident || acc.ResidentTaskFile() != ""
+	if resident {
 		if err := r.pauseResident(acc.ID); err != nil {
-			r.finishTask(t, false, "肉鸽暂停失败："+err.Error(), "")
+			r.finishTask(t, false, r.residentLabelFor(acc.ID)+"暂停失败："+err.Error(), "")
 			return // fail closed: no device action, no resume on timeout
 		}
 		r.setLoopPhase(acc.ID, "daily", "日常插队")
@@ -53,8 +54,8 @@ func (r *Runner) runTask(t *Task) {
 	}
 	log.Printf("[%s] 设备就绪 127.0.0.1:%s", t.Key, port)
 
-	// 常驻机：从肉鸽被打断的现场里起来，先关游戏（否则 MAA 从脏画面起步）
-	if acc.Resident {
+	// 常驻机：从常驻任务被打断的现场里起来，先关游戏（否则 MAA 从脏画面起步）
+	if resident {
 		forceStopGame(r.cfg, port, GamePackage(r.cfg, acc.Client, port))
 	}
 
@@ -73,9 +74,9 @@ func (r *Runner) runTask(t *Task) {
 		r.scheduleNextDaily(t, acc)
 		r.saveState()
 	}
-	// 常驻机：永不关机（肉鸽要接着跑）；其它机：同实例还有活儿就连锁，否则停机
-	if acc.Resident {
-		log.Printf("[%s] 常驻机 → 保持开机，肉鸽接回", t.Key)
+	// 常驻机：永不关机（常驻任务要接着跑）；其它机：同实例还有活儿就连锁，否则停机
+	if resident {
+		log.Printf("[%s] 常驻机 → 保持开机，%s接回", t.Key, r.residentLabelFor(acc.ID))
 	} else if r.sameInstanceHasWork(acc) {
 		log.Printf("[%s] 同实例还有活儿 → 保持开机，接着排下一个", t.Key)
 	} else {
@@ -363,22 +364,27 @@ func (r *Runner) ReportSummary() {
 			}
 			st["note"] = t.Note
 		}
-		// 常驻肉鸽机：肉鸽才是主状态；日常状态另存一个字段（两者本来就能同时存在）
-		if a.RogueTask != "" {
+		// 常驻任务机（肉鸽/卫戍协议）：常驻任务才是主状态；日常状态另存一个字段（两者本来就能同时存在）
+		if rt := a.ResidentTaskFile(); rt != "" {
+			label := residentLabel(rt)
 			if l := r.lanes[a.ID]; l != nil {
 				rs := l.status()
 				if dv, ok := st["maa"].(string); ok && dv != "待跑" {
 					st["daily"] = dv
 				}
 				st["maa"] = rs
-				if rs == "肉鸽跑着" && r.logAgeMin(a) < 5 {
+				st["residentLabel"] = label
+				st["residentTask"] = rt
+				if strings.HasSuffix(rs, "跑着") && r.logAgeMin(a) < 5 {
 					st["health"] = "OK"
 				}
 				if n := l.noteText(); n != "" {
 					st["note"] = n
 				}
 			} else {
-				st["maa"] = "肉鸽未启动"
+				st["maa"] = label + "未启动"
+				st["residentLabel"] = label
+				st["residentTask"] = rt
 			}
 			if t := r.state.Tasks["rogue:"+a.ID]; t != nil {
 				st["rogue"] = t.State
@@ -401,7 +407,7 @@ func (r *Runner) ReportSummary() {
 			}
 		}
 		machines[a.ID] = st
-		if a.RogueTask != "" {
+		if a.ResidentTaskFile() != "" {
 			focus[a.ID] = a
 		}
 	}

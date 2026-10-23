@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,6 +33,7 @@ import (
 //	· 连续两轮连设备都起不来 → 硬重启模拟器（坏 VM 阶梯）
 const rogueStaleMin = 5 // 日志多少分钟没更新算卡死
 const rogueSpinMin = 8  // 同一 cur_task 连续多久算空转。2026-10-05 健康局最长 2.5 分钟（l-1 Begin / l-5 空任务）
+const spaSpinMin = 20   // 卫戍协议一局自动作战可能很久，同一 cur_task 的容忍时间放宽
 
 type rogueLane struct {
 	acc model.Account
@@ -41,7 +43,8 @@ type rogueLane struct {
 	stop      bool
 	run       *maaRun
 	note      string
-	task      string // 当前任务名（热切换时更新；空 = 用 acc.RogueTask）
+	task      string // 当前任务名（热切换时更新；空 = 用 acc.ResidentTaskFile()）
+	label     string // 看板/日志里的名字：肉鸽 / 卫戍
 	switching bool   // 当前 maa 是被 setRogue 杀掉的：退出后不判 out、不睡 10 秒
 	restarts  int
 	lastAt    time.Time
@@ -80,16 +83,40 @@ func (l *rogueLane) endCycle() {
 func (l *rogueLane) status() string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	label := l.label
+	if label == "" {
+		label = "常驻"
+	}
 	switch {
 	case l.stop:
-		return "肉鸽停止"
+		return label + "停止"
 	case l.paused:
-		return "肉鸽暂停（日常）"
+		return label + "暂停（日常）"
 	case l.run != nil:
-		return "肉鸽跑着"
+		return label + "跑着"
 	default:
-		return "肉鸽重启中"
+		return label + "重启中"
 	}
+}
+
+// labelText 车道显示名（空 = 常驻）。
+func (l *rogueLane) labelText() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.label == "" {
+		return "常驻"
+	}
+	return l.label
+}
+
+// spinLimit 同一 cur_task 连续多久算空转（卫戍协议一局长，放宽）。
+func (l *rogueLane) spinLimit() time.Duration {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.label == "卫戍" {
+		return spaSpinMin * time.Minute
+	}
+	return rogueSpinMin * time.Minute
 }
 
 // noteText 当前备注（给上报用）。
@@ -101,20 +128,42 @@ func (l *rogueLane) noteText() string {
 
 // ---- 生命周期 -----------------------------------------------------------------
 
-// startResidents 给每个常驻账号起一条肉鸽车道（不受并发位限制：常驻就是常驻）。
+// residentLabel 看板/日志里的车道名：卫戍协议 / 肉鸽。
+func residentLabel(task string) string {
+	t := strings.ToLower(strings.TrimSpace(task))
+	switch {
+	case strings.Contains(t, "spa"), strings.Contains(t, "weisheng"), strings.Contains(t, "wsxy"):
+		return "卫戍"
+	default:
+		return "肉鸽"
+	}
+}
+
+// startResidents 给每个常驻账号起一条常驻车道（不受并发位限制：常驻就是常驻）。
 func (r *Runner) startResidents() {
 	for i := range r.accounts {
 		a := r.accounts[i]
-		if !a.Enabled || a.RogueTask == "" {
+		task := a.ResidentTaskFile()
+		if !a.Enabled || task == "" {
 			continue
 		}
-		l := &rogueLane{acc: a, task: a.RogueTask, note: "常驻"}
-		r.mu.Lock()
-		r.lanes[a.ID] = l
-		r.mu.Unlock()
-		r.upsertRogueTask(a, a.RogueTask, "running", "常驻")
-		go r.residentLoop(l)
+		r.startLane(a, task)
 	}
+}
+
+// startLane 启动一条常驻车道（幂等：同一账号已有车道时原样返回）。
+func (r *Runner) startLane(a model.Account, task string) *rogueLane {
+	r.mu.Lock()
+	if l := r.lanes[a.ID]; l != nil {
+		r.mu.Unlock()
+		return l
+	}
+	l := &rogueLane{acc: a, task: task, label: residentLabel(task), note: "常驻"}
+	r.lanes[a.ID] = l
+	r.mu.Unlock()
+	r.upsertRogueTask(a, task, "running", "常驻")
+	go r.residentLoop(l)
+	return l
 }
 
 func (r *Runner) stopResidents() {
@@ -206,10 +255,10 @@ func (r *Runner) setLoopRestarts(accountID string, n int) {
 	r.saveState()
 }
 
-// residentLoop 一台机的肉鸽常驻循环。
+// residentLoop 一台机的常驻任务循环。
 func (r *Runner) residentLoop(l *rogueLane) {
 	a := l.acc
-	log.Printf("[rogue:%s] 常驻肉鸽启动（任务 %s，实例 %s）", a.ID, l.taskName(), a.Emu)
+	log.Printf("[%s:%s] 常驻任务启动（任务 %s，实例 %s）", l.labelText(), a.ID, l.taskName(), a.Emu)
 	fails := 0
 	for {
 		if l.stopped() {
@@ -234,7 +283,7 @@ func (r *Runner) residentLoop(l *rogueLane) {
 				fails++
 				l.setNote("设备未就绪：" + err.Error())
 				r.upsertRogueTask(a, task, "running", "设备未就绪（第 "+strconv.Itoa(fails)+" 次）")
-				log.Printf("[rogue:%s] 设备未就绪：%v（连续 %d 次）", a.ID, err, fails)
+				log.Printf("[%s:%s] 设备未就绪：%v（连续 %d 次）", l.labelText(), a.ID, err, fails)
 				if fails >= 2 {
 					DeviceHardReset(r.cfg, a.Emu)
 					fails = 0
@@ -244,7 +293,7 @@ func (r *Runner) residentLoop(l *rogueLane) {
 			}
 			fails = 0
 
-			// 关游戏再发车：肉鸽被日常打断过/上次被杀，留着的画面会让 MAA 从脏状态起步。
+			// 关游戏再发车：常驻任务被日常打断过/上次被杀，留着的画面会让 MAA 从脏状态起步。
 			// 但暂停信号随时可能到 —— 到就不动手（别人正在跑日常，不能 force-stop 抢设备）
 			if l.isPaused() {
 				sleepInterruptible(l, 2*time.Second)
@@ -260,7 +309,7 @@ func (r *Runner) residentLoop(l *rogueLane) {
 			run, err := r.startMaa(a, port, task)
 			if err != nil {
 				l.setNote("发车失败：" + err.Error())
-				log.Printf("[rogue:%s] 发车失败：%v", a.ID, err)
+				log.Printf("[%s:%s] 发车失败：%v", l.labelText(), a.ID, err)
 				sleepInterruptible(l, 60*time.Second)
 				return
 			}
@@ -271,9 +320,9 @@ func (r *Runner) residentLoop(l *rogueLane) {
 				return
 			}
 			l.setRun(run)
-			l.setNote("肉鸽跑着")
-			r.upsertRogueTask(a, task, "running", "肉鸽跑着")
-			log.Printf("[rogue:%s] 已发车 %s（pid=%d，日志 %s）", a.ID, task, run.cmd.Process.Pid, filepath.Base(run.out))
+			l.setNote(l.labelText() + "跑着")
+			r.upsertRogueTask(a, task, "running", l.labelText()+"跑着")
+			log.Printf("[%s:%s] 已发车 %s（pid=%d，日志 %s）", l.labelText(), a.ID, task, run.cmd.Process.Pid, filepath.Base(run.out))
 
 			// 起机过程中被热切换：刚发的旧任务立刻收回，走下面的“切换任务”分支。
 			if l.taskName() != task {
@@ -288,6 +337,7 @@ func (r *Runner) residentLoop(l *rogueLane) {
 			go func() { done <- run.cmd.Wait() }()
 			lastMod := time.Now() // 从“现在”起算新鲜度（asst.log 是跨次追加的，不能用文件 mtime 起步）
 			lastBeat := time.Now()
+			spinLimit := l.spinLimit()
 			reason := ""
 			exited := false
 			var spinTask string
@@ -326,7 +376,7 @@ func (r *Runner) residentLoop(l *rogueLane) {
 						spinTask = task
 						spinSince = time.Now()
 						spinSeen = true
-					} else if time.Since(spinSince) >= rogueSpinMin*time.Minute {
+					} else if time.Since(spinSince) >= spinLimit {
 						killMaa(run)
 						name := task
 						if name == "" {
@@ -338,7 +388,7 @@ func (r *Runner) residentLoop(l *rogueLane) {
 				}
 				// 心跳（每 ~10 分钟一条）：车道没声音不代表在干活，留个心跳好排查
 				if time.Since(lastBeat) > 10*time.Minute {
-					log.Printf("[rogue:%s] 看护中：maa pid=%d，日志 %.1f 分钟前更新", a.ID, run.cmd.Process.Pid, r.logAgeMin(a))
+					log.Printf("[%s:%s] 看护中：maa pid=%d，日志 %.1f 分钟前更新", l.labelText(), a.ID, run.cmd.Process.Pid, r.logAgeMin(a))
 					lastBeat = time.Now()
 				}
 				time.Sleep(20 * time.Second)
@@ -357,32 +407,44 @@ func (r *Runner) residentLoop(l *rogueLane) {
 			if l.takeSwitch() {
 				task = l.taskName()
 				l.setNote("切换任务：" + task)
-				log.Printf("[rogue:%s] 切换任务 → %s", a.ID, task)
+				log.Printf("[%s:%s] 切换任务 → %s", l.labelText(), a.ID, task)
 				r.upsertRogueTask(a, task, "running", "切换任务")
 				return
 			}
 			// 自然退出 → 判 out（成功/失败）；被杀 → 只记原因
 			if reason == "任务退出" {
 				ok, why := r.judgeOutFile(run.out)
-				l.setNote("肉鸽" + map[bool]string{true: "完成", false: "失败"}[ok] + why)
+				label := l.labelText()
+				l.setNote(label + map[bool]string{true: "完成", false: "失败"}[ok] + why)
 				r.setLoopResult(a.ID, map[bool]string{true: "ok", false: "fail"}[ok]+why)
-				log.Printf("[rogue:%s] 肉鸽退出：ok=%v %s → 立即重来", a.ID, ok, why)
+				log.Printf("[%s:%s] 任务退出：ok=%v %s → 立即重来", label, a.ID, ok, why)
 			} else {
 				l.setNote(reason)
 				r.setLoopResult(a.ID, reason)
-				log.Printf("[rogue:%s] 肉鸽中断：%s → 重来", a.ID, reason)
+				log.Printf("[%s:%s] 任务中断：%s → 重来", l.labelText(), a.ID, reason)
 			}
 			r.upsertRogueTask(a, task, "running", l.noteText())
 			sleepInterruptible(l, 10*time.Second)
 		}()
 	}
 	r.upsertRogueTask(a, l.taskName(), "done", "已停止")
-	log.Printf("[rogue:%s] 常驻肉鸽已停止", a.ID)
+	log.Printf("[%s:%s] 常驻任务已停止", l.labelText(), a.ID)
 }
 
 // ---- 与日常互斥 ---------------------------------------------------------------
 
-// pauseResident 暂停某账号的肉鸽（日常要插队）：杀 maa + 等它真的停下（模拟器不动）。
+// residentLabelFor 某账号车道的显示名（没车道时用「肉鸽」，兼容旧上报文案）。
+func (r *Runner) residentLabelFor(accountID string) string {
+	r.mu.Lock()
+	l := r.lanes[accountID]
+	r.mu.Unlock()
+	if l == nil {
+		return "肉鸽"
+	}
+	return l.labelText()
+}
+
+// pauseResident 暂停某账号的常驻任务（日常要插队）：杀 maa + 等它真的停下（模拟器不动）。
 func (r *Runner) pauseResident(accountID string) error {
 	return r.pauseResidentWithin(accountID, 30*time.Second)
 }
@@ -398,7 +460,7 @@ func (r *Runner) pauseResidentWithin(accountID string, timeout time.Duration) er
 	l.paused = true
 	idle := l.idle
 	l.mu.Unlock()
-	r.setLoopPhase(accountID, "paused", "肉鸽暂停（日常插队）")
+	r.setLoopPhase(accountID, "paused", l.labelText()+"暂停（日常插队）")
 	// The cycle owns kill and Wait; acknowledgement includes their completion.
 	if idle == nil {
 		return nil
@@ -409,12 +471,12 @@ func (r *Runner) pauseResidentWithin(accountID string, timeout time.Duration) er
 	case <-idle:
 		return nil
 	case <-timer.C:
-		r.setLoopPhase(accountID, "paused", "肉鸽暂停超时")
+		r.setLoopPhase(accountID, "paused", l.labelText()+"暂停超时")
 		return fmt.Errorf("resident %s did not quiesce within %s", accountID, timeout)
 	}
 }
 
-// resumeResident 日常跑完，放开肉鸽（residentLoop 会自己接上）。
+// resumeResident 日常跑完，放开常驻任务（residentLoop 会自己接上）。
 func (r *Runner) resumeResident(accountID string) {
 	r.mu.Lock()
 	l := r.lanes[accountID]
@@ -423,8 +485,8 @@ func (r *Runner) resumeResident(accountID string) {
 		return
 	}
 	l.setPaused(false)
-	r.setLoopPhase(accountID, "rogue", "日常结束，肉鸽恢复")
-	log.Printf("[rogue:%s] 日常结束 → 放开肉鸽", accountID)
+	r.setLoopPhase(accountID, "rogue", "日常结束，"+l.labelText()+"恢复")
+	log.Printf("[%s:%s] 日常结束 → 放开%s", l.labelText(), accountID, l.labelText())
 }
 
 // ---- 小工具 -------------------------------------------------------------------

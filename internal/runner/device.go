@@ -130,14 +130,14 @@ func GamePackage(cfg Config, client, port string) string {
 		"YoStarEN": "com.YoStarEN.Arknights",
 		"YoStarJP": "com.YoStarJP.Arknights",
 		"YoStarKR": "com.YoStarKR.Arknights",
-		"txwy":     "com.wayi.arknights",
+		"txwy":     "tw.txwy.and.arknights",
 	}
 	pkg, ok := byClient[client]
 	if !ok {
 		pkg = "com.hypergryph.arknights"
 	}
 	out, _ := execOut(20*time.Second, cfg.AdbExe, "-s", "127.0.0.1:"+port, "shell", "pm", "list", "packages")
-	hits := regexp.MustCompile(`(?i)package:(com\.[a-z0-9._]*arknights[a-z0-9._]*)`).FindAllStringSubmatch(out, -1)
+	hits := regexp.MustCompile(`(?i)package:([a-z0-9._]*arknights[a-z0-9._]*)`).FindAllStringSubmatch(out, -1)
 	if len(hits) == 1 && hits[0][1] != pkg {
 		pkg = hits[0][1]
 	}
@@ -175,8 +175,8 @@ func (r *Runner) SweepOrphans() {
 			keep[a.Emu] = true
 		}
 	}
-	for i := range r.accounts { // 常驻（肉鸽）机的实例永远不许当孤儿关掉
-		if r.accounts[i].RogueTask != "" {
+	for i := range r.accounts { // 常驻任务机的实例永远不许当孤儿关掉
+		if r.accounts[i].ResidentTaskFile() != "" {
 			keep[r.accounts[i].Emu] = true
 		}
 	}

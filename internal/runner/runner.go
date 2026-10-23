@@ -320,11 +320,11 @@ func (r *Runner) syncQueue() (added int) {
 				}
 			}
 		}
-		// 肉鸽（常驻型）：这条不排队，只保证台账存在；真正的循环在 rogue.go 的车道里
-		if a.RogueTask != "" {
+		// 常驻任务（肉鸽/卫戍协议等）：这条不排队，只保证台账存在；真正的循环在 rogue.go 的车道里
+		if rt := a.ResidentTaskFile(); rt != "" {
 			rk := "rogue:" + a.ID
 			if r.state.Tasks[rk] == nil {
-				r.state.Tasks[rk] = &Task{Key: rk, AccountID: a.ID, Kind: "rogue", File: a.RogueTask,
+				r.state.Tasks[rk] = &Task{Key: rk, AccountID: a.ID, Kind: "rogue", File: rt,
 					State: "running", Enqueued: nowStamp(), Started: nowStamp(), Note: "常驻"}
 			}
 		}
@@ -490,7 +490,7 @@ func (r *Runner) Status() {
 	if r.MaintenanceOn() {
 		maint = "开（不派车 / 不扫模拟器）"
 	}
-	log.Printf("任务队列｜游戏日 %s｜账号 %d｜并发上限 %d（在跑 %d，肉鸽常驻 %d）｜维护 %s｜资源 空闲 %dMB / CPU %.0f%%", day, total, r.cfg.MaxConcurrent, running, rogueN, maint, FreeRAMMB(), r.CPUPercent())
+	log.Printf("任务队列｜游戏日 %s｜账号 %d｜并发上限 %d（在跑 %d，常驻任务 %d）｜维护 %s｜资源 空闲 %dMB / CPU %.0f%%", day, total, r.cfg.MaxConcurrent, running, rogueN, maint, FreeRAMMB(), r.CPUPercent())
 	log.Printf("  今日日常完成 %d/%d｜本周剿灭完成 %d｜队列待跑 %d｜失败 %d%s", doneD, total, doneA, queued, failed,
 		func() string {
 			if len(pend) > 0 {
@@ -515,7 +515,7 @@ func (r *Runner) Run(once bool) {
 		log.Printf("[维护] 维护模式开着（%s）：不派车、不扫模拟器；删掉该文件即恢复", r.maintenancePath())
 	}
 	r.SweepOrphans()
-	r.startResidents() // 常驻肉鸽车道（不受并发位限制）
+	r.startResidents() // 常驻任务车道（肉鸽/卫戍协议等，不受并发位限制）
 	tick := 0
 	for {
 		r.Tick()

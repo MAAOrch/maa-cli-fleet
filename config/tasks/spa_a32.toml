@@ -1,0 +1,21 @@
+# spa_a32.toml — a32（台服 史蒂芬芬）卫戍协议常驻
+#
+# 与肉鸽车道同一套常驻机制：StartUp → 进场导航 → MAA 的 MiniGame@SPA 循环
+# 一直刷；日常到点会暂停（杀 maa、不关模拟器），跑完自动接回。
+#
+# 依赖（随 config/maa/MAAOrch 一起部署到 MAA resource）：
+#   resource/tasks/MAAOrch/spa_tw.json
+#   resource/template/MAAOrch/SPABannerTxwy.png 等 6 张图
+# 进场导航负责：大厅活动横幅 → 关闭活动介绍 → 放弃旧存档 → 独立模拟。
+#
+# 台服活动结束时间 2026/11/05 03:59；到期后本任务会找不到入口，届时停用 a32 或换任务。
+
+[[tasks]]
+name = "开始唤醒"
+type = "StartUp"
+params = { client_type = "txwy", start_game_enabled = true }
+
+[[tasks]]
+name = "卫戍协议"
+type = "Custom"
+params = { task_names = ["MAAOrch@SPA@Enter"] }

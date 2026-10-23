@@ -54,8 +54,8 @@ func TestSetRogueUpdatesLaneAndAccounts(t *testing.T) {
 	if err := r.SetRogue("l7", "rogue_new.toml"); err != nil {
 		t.Fatalf("SetRogue: %v", err)
 	}
-	if got := r.accounts[0].RogueTask; got != "rogue_new" {
-		t.Fatalf("in-memory rogueTask = %q, want rogue_new", got)
+	if got := r.accounts[0].ResidentTask; got != "rogue_new" {
+		t.Fatalf("in-memory residentTask = %q, want rogue_new", got)
 	}
 	if got := lane.taskName(); got != "rogue_new" {
 		t.Fatalf("lane task = %q, want rogue_new", got)
@@ -79,8 +79,11 @@ func TestSetRogueUpdatesLaneAndAccounts(t *testing.T) {
 	if len(accounts) != 1 {
 		t.Fatalf("accounts len = %d", len(accounts))
 	}
-	if got := string(accounts[0]["rogueTask"]); got != `"rogue_new"` {
-		t.Fatalf("persisted rogueTask = %s", got)
+	if got := string(accounts[0]["residentTask"]); got != `"rogue_new"` {
+		t.Fatalf("persisted residentTask = %s", got)
+	}
+	if _, ok := accounts[0]["rogueTask"]; ok {
+		t.Fatal("legacy rogueTask should be cleared after switching")
 	}
 	if got := string(accounts[0]["custom"]); got != `"keep"` {
 		t.Fatalf("unknown field not preserved: %s", got)

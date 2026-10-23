@@ -110,7 +110,10 @@ func main() {
 			}
 			return
 		}
-		if v := flagValue(args, "-set-rogue", ""); v != "" {
+		if v := flagValue(args, "-set-rogue", ""); v != "" || flagValue(args, "-set-resident", "") != "" {
+			if v == "" {
+				v = flagValue(args, "-set-resident", "")
+			}
 			if err := runner.QueueOp(cfg, "setRogue", v); err != nil {
 				fmt.Fprintln(os.Stderr, "热切换失败：", err)
 				os.Exit(1)
@@ -211,7 +214,7 @@ func usage() {
   fleet center [-addr 0.0.0.0:8790] [-state <目录>] [-token <密钥>]
   fleet setup  [-root <项目>] [-data <MAA_DATA_DIR>] [-force] [-channel stable]
   fleet runner [-conf <runner.json>] [-status] [-once] [-enqueue k:id] [-cancel key]
-              [-set-rogue <账号>:<任务>]   # 热切换某账号的肉鸽任务（只动该车道）
+              [-set-resident <账号>:<任务>]   # 热切换/新开常驻任务（肉鸽、卫戍协议等；-set-rogue 为旧别名）
               [-maintenance on|off|status]   # 维护模式：人在手工登号/排障时用（不派车、不关模拟器）
   fleet gen    [-automas <AUTO-MAS 目录>] [-dry]
   fleet version

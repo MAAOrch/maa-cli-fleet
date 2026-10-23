@@ -3,6 +3,7 @@
 ## 命名约定
 
 - **肉鸽**：`rogue_<theme>_<account>.toml`，例如 `rogue_jiegarden_l2.toml`。
+- **卫戍协议**：`spa_<account>.toml`，例如 `spa_a32.toml`（依赖 `config/maa/MAAOrch` 的进场导航）。
 - **日常**：`daily_<account>.toml`。
 - **剿灭**：`ann_<account>.toml`。
 - `daily_a*.toml` / `ann_a*.toml` 由生成器产生，属于本机运行态，默认不入库。
@@ -13,15 +14,16 @@
 
 ## 当前启用映射
 
-| 账号 | 启用 | 日常 | 肉鸽 |
+| 账号 | 启用 | 日常 | 常驻 |
 |---|---|---|---|
-| `l2` | ✅ | `daily_l2` | `rogue_jiegarden_l2`（界园） |
-| `l7` | ✅ | `daily_l7` | `rogue_jiegarden_l7`（界园） |
+| `l2` | ✅ | `daily_l2` | `rogue_jiegarden_l2`（界园肉鸽） |
+| `l7` | ✅ | `daily_l7` | `rogue_jiegarden_l7`（界园肉鸽） |
+| `a32` | ✅（台服） | `daily_a32` | `spa_a32`（卫戍协议） |
 | `l1` | ⏸ | `daily_l1` | `rogue_sami_l1`（萨米） |
 | `l4` | ⏸ | `daily_l4` | `rogue_sarkaz_l4`（萨卡兹） |
 | `l5` | ⏸ | — | `rogue_sarkaz_l5`（萨卡兹） |
 
-停用账号没有常驻车道；`fleet runner -set-rogue` 会拒绝停用账号。
+停用账号没有常驻车道；`fleet runner -set-resident` 会拒绝停用账号。
 
 ## 热切换
 
