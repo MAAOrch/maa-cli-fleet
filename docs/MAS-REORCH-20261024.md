@@ -86,8 +86,11 @@ pathConflicts=0 duplicateScripts=0
 - b-1 `Success!`，1-7 掉落正常，耗时 9m35s；
 - b-12 / b-5 / 日-14 / 日-24 `Success!`；
 - 日-4 `MAA 在完成任务前中止`，日志为「游戏掉线，停止任务」，理智 204 未消耗；
-- b-13 第一轮卡在 MAA 的 `adb devices` 枚举，10 分钟超时后被 MAS 自动重试；
-  第二轮正常进入日常。
+- b-13 前两轮都卡在 MAA 的 `adb devices` 枚举，各 10 分钟超时后被 MAS 重试；
+  第三轮已连上 16992，`adb devices` 0.02s、`shell echo ok` 正常，正在跑日常。
+  ADB server 与 runner 的 17028/17280 共用，属于 ADB 枚举偶发争用，不是账号问题。
+- 官组 28 个克隆都有手机号 `Info.Id`，运行时 MAS 会按 Id 重写
+  `StartUp.AccountName`，同模拟器串行切号不会串号。
 
 结论：independent 配置路径可用；日-4 是账号/登录状态问题，b-13 是 ADB 枚举偶发卡死，
 都不是重排配置错误。并发仍是 3 条队列，给 runner 留 CPU（runner `maxCpuPct=65`）。
