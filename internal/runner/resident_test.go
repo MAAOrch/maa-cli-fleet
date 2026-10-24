@@ -39,6 +39,20 @@ func TestResidentLabel(t *testing.T) {
 	}
 }
 
+func TestIsBlankRun(t *testing.T) {
+	cases := map[string]bool{
+		"completed=0 errored=0 hardFail=false": true,
+		"completed=1 errored=0 hardFail=false": false,
+		"completed=0 errored=2 hardFail=false": false,
+		"completed=0 errored=0 hardFail=true":  false,
+	}
+	for why, want := range cases {
+		if got := isBlankRun(why); got != want {
+			t.Fatalf("isBlankRun(%q) = %v, want %v", why, got, want)
+		}
+	}
+}
+
 func TestSpaSpinLimitIsLonger(t *testing.T) {
 	spa := &rogueLane{label: "卫戍"}
 	if got := spa.spinLimit(); got != spaSpinMin*time.Minute {

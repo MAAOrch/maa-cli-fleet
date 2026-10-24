@@ -99,6 +99,40 @@
   ```
 
 
+## 2026-10-24 故障与修复
+
+当天下午出现过一次「看起来没在刷」，实际是两个独立问题叠加：
+
+### 1. 日服客户端更新 → JP 常驻车道全挂
+
+- 17:29 左右日服客户端更新到 `37.7.41`；
+- `l1/l2/l4/l5/l7` 的 `accounts.json` 里 `client` 为空，runner 发车时没有 `-p YoStarJP`；
+- MAA 加载了 **Official** resource，认不出日服标题画面：
+  `StartUp Error` → `Roguelike Error`，日志里还会看到
+  `Global resource Official already set, ignoring YoStarJP`。
+- 修复：把这些日服常驻账号的 `client` 设为 `YoStarJP`，重启 runner。
+  **以后手工加日服常驻账号必须填 `"client": "YoStarJP"`；台服填 `"txwy"`。**
+
+### 2. 台服 emu 32 黑屏 → SPA 车道空转
+
+- 16:33 的日常跑完后，emu 32 的游戏进程还在，但截图是**纯黑**（5336 字节）；
+- MAA 每次退出都没有任务摘要（`completed=0 errored=0`），旧逻辑只会重发 MAA，
+  不会修画面，所以看起来「一直在重启但没在刷」；
+- 硬重启 emu 32 后恢复，SPA 进场导航重新走通。
+- runner 新增：常驻车道**连续 2 次**无任务摘要 → 自动 `DeviceHardReset`；
+  卫戍车道的日常暂停超时放宽到 5 分钟，给硬重启留时间。
+
+### 3. 旧 PS 栈抢车道
+
+- `node/fleet_node.ps1`（`FleetNode-AutoStart` / `FleetNode-Watchdog`）仍在跑，
+  和 Go runner 管同一批 `l2/l7`；18:17 四路 MAA 同时退出，就是它在做 worker 巡检/抢占。
+- 已禁用这两个计划任务并停掉 `fleet_node.ps1`；只保留
+  `FleetRunner-AutoStart` / `FleetRunner-Watchdog`。
+- 旧栈仅保留为手动兜底，不再常驻。
+
+修复后 18:26：a32 在 SPA 自动作战（回合 3），l2/l7/a19 在界园战斗；
+a32 的卫戍等级已到 **LV 52**，下次日常 `2026-10-25 08:33`。
+
 ## 注意事项
 
 - **活动期限**：台服本期的作战结束时间是 `2026/11/05 03:59`。到期后 `MiniGame@SPA@Begin`

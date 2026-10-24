@@ -29,6 +29,14 @@ func (r *Runner) runTask(t *Task) {
 	start := time.Now()
 	log.Printf("[%s] 开始 %s（%s，第 %d 次）", t.Key, acc.Name, t.Kind, t.Attempts)
 
+	// 服务器类型按账号/任务解析；解析不到就不动设备、不发车（禁止静默落到 default profile）。
+	client, err := r.profileFor(acc, t.File)
+	if err != nil {
+		r.finishTask(t, false, err.Error(), "")
+		log.Printf("[%s] %v（不发车）", t.Key, err)
+		return
+	}
+
 	// 常驻任务机（肉鸽/卫戍协议）：日常要插队 —— 先暂停常驻任务（杀 maa，模拟器不动），跑完自动接回
 	resident := acc.Resident || acc.ResidentTaskFile() != ""
 	if resident {
@@ -56,7 +64,7 @@ func (r *Runner) runTask(t *Task) {
 
 	// 常驻机：从常驻任务被打断的现场里起来，先关游戏（否则 MAA 从脏画面起步）
 	if resident {
-		forceStopGame(r.cfg, port, GamePackage(r.cfg, acc.Client, port))
+		forceStopGame(r.cfg, port, GamePackage(r.cfg, client, port))
 	}
 
 	ok2, out, err := r.execMaa(acc, port, t.File)
@@ -106,17 +114,58 @@ func (m *maaRun) closeOut() {
 	// 进程结束/被杀后关掉我们持有的句柄（子进程有自己的句柄，不影响）
 }
 
+// clientFromTask：任务文件里 StartUp 的 client_type（账号表 client 为空时的兜底）。
+// 机队里同时有 Official / Bilibili / YoStarJP / txwy，绝不能靠全局 default profile 猜服务器。
+var reClientType = regexp.MustCompile(`(?m)client_type\s*=\s*"([^"]+)"`)
+
+func clientFromTask(configDir, task string) string {
+	b, err := os.ReadFile(filepath.Join(configDir, "tasks", task+".toml"))
+	if err != nil {
+		return ""
+	}
+	m := reClientType.FindSubmatch(b)
+	if len(m) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(string(m[1]))
+}
+
+// clientFor：账号 client 优先，其次任务 client_type；都没有就报错，禁止回落到 default profile。
+func (r *Runner) clientFor(a model.Account, task string) (string, error) {
+	if c := strings.TrimSpace(a.Client); c != "" {
+		return c, nil
+	}
+	if c := clientFromTask(r.cfg.ConfigDir, task); c != "" {
+		return c, nil
+	}
+	return "", fmt.Errorf("账号 %s 未配置 client，任务 %s 也没有 client_type（拒绝回落到 default profile）", a.ID, task)
+}
+
+// profileFor：返回 client，并确认对应的 maa-cli profile 存在，避免 -p 到不存在的 profile。
+func (r *Runner) profileFor(a model.Account, task string) (string, error) {
+	c, err := r.clientFor(a, task)
+	if err != nil {
+		return "", err
+	}
+	p := filepath.Join(r.cfg.ConfigDir, "profiles", c+".toml")
+	if _, err := os.Stat(p); err != nil {
+		return "", fmt.Errorf("客户端 %s 没有 profile 文件 %s", c, p)
+	}
+	return c, nil
+}
+
 // startMaa 发车一个任务（不等待）；env 与旧 execMaa 完全一致。
 func (r *Runner) startMaa(a model.Account, port, task string) (*maaRun, error) {
+	profile, err := r.profileFor(a, task)
+	if err != nil {
+		return nil, err
+	}
 	outFile := filepath.Join(r.cfg.LogDir, fmt.Sprintf("%s_%s.out", task, time.Now().Format("0102_150405")))
 	f, err := os.Create(outFile)
 	if err != nil {
 		return nil, err
 	}
-	args := []string{"--batch", "run", task, "-a", "127.0.0.1:" + port}
-	if a.Client != "" {
-		args = append(args, "-p", a.Client)
-	}
+	args := []string{"--batch", "run", task, "-a", "127.0.0.1:" + port, "-p", profile}
 	cmd := exec.Command(r.cfg.MaaExe, args...)
 	cmd.Dir = filepath.Dir(r.cfg.MaaExe)
 	cmd.Stdout = f

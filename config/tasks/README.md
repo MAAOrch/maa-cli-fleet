@@ -12,18 +12,27 @@
 > 历史上为了“立刻生效”，曾把新主题内容写进旧文件（例如 `rogue_mizuki_l7.toml`
 > 里实际是 Sami），这些旧文件已经归档到 `legacy/`，不要再引用。
 
+> ⚠️ **accounts.json 的 `client` 必须和任务文件的 `client_type` 一致。**
+> 日服常驻账号填 `"client": "YoStarJP"`，台服填 `"client": "txwy"`。
+> 不填会退回 Official resource：日服客户端更新后 StartUp 直接 Error，
+> 表现为“肉鸽/卫戍车道一直重启但没在跑”。
+
 ## 当前启用映射
 
 | 账号 | 启用 | 日常 | 常驻 |
 |---|---|---|---|
 | `l2` | ✅ | `daily_l2` | `rogue_jiegarden_l2`（界园肉鸽） |
 | `l7` | ✅ | `daily_l7` | `rogue_jiegarden_l7`（界园肉鸽） |
+| `a19` | ✅ | `daily_a19` | `rogue_jiegarden_a19`（界园肉鸽） |
 | `a32` | ✅（台服） | `daily_a32` | `spa_a32`（卫戍协议） |
 | `l1` | ⏸ | `daily_l1` | `rogue_sami_l1`（萨米） |
 | `l4` | ⏸ | `daily_l4` | `rogue_sarkaz_l4`（萨卡兹） |
 | `l5` | ⏸ | — | `rogue_sarkaz_l5`（萨卡兹） |
 
 停用账号没有常驻车道；`fleet runner -set-resident` 会拒绝停用账号。
+
+`a19`（v）使用 **23 号专用模拟器**（2026-10-24 从 AUTO-MAS 共用的 4 号克隆，保留 v 的登录）；
+AUTO-MAS 里 v 用户已 `Status=false`，不再参与 `并行3`（05:20 / 19:20）调度，避免和肉鸽抢号。
 
 ## 热切换
 

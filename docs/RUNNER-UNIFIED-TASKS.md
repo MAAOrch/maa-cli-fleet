@@ -26,6 +26,18 @@
 - `stateDir`：`MAA_STATE_DIR` 覆盖（肉鸽机沿用老目录 `data/state_l4`，不丢缓存）；
 - 日常/剿灭字段照旧 —— 同一台机可以三种任务都有。
 
+## 多服务器：client 必须按账号走（2026-10-24）
+
+机队同时有 Official / Bilibili / YoStarJP / txwy，**不能用 `config/profiles/default.toml` 代表整机客户端**。
+
+- `runner/accounts.json` 的 `client` 是权威来源：runner 发车时显式 `-p <client>`；
+- `client` 为空时，runner 从任务文件的 `client_type` 推导（`internal/runner/slot.go` 的 `clientFor`）；
+- 两者都没有，或对应 `config/profiles/<client>.toml` 不存在 → **拒绝发车**并报错，不再静默回落 default；
+- `default.toml` 只保留给手工运行（例如 lx 的生息测试），不参与调度账号；
+- 5 台 l- 肉鸽机（l1/l2/l4/l5/l7）必须写 `"client": "YoStarJP"`。
+
+事故背景：2026-10-24 06:51 把 default 从 YoStarJP 改成 Official，l2/l7 因 `client` 为空回落到 default，maa 用国服资源启动日服客户端，StartUp 每轮失败，常驻车道每 4 分钟 force-stop 重来；07:15–17:50 共 139/146 次失败、0 次成功。补 `client` 并重启后，l2/l7 已进入 `JieGarden@Roguelike@...`。
+
 ## 实现（Go 侧，commit `4b535c0`）
 
 | 文件 | 改动 |
@@ -396,6 +408,31 @@ fleet.exe runner -conf runner\runner.json -set-rogue l2:rogue_jiegarden_l2
 - 模板 canonical 化（2026-10-23）：根目录 13 个 `rogue_<theme>_<account>.toml` 全部与 `theme` 一致，
   6 个旧别名归档到 `config/tasks/legacy/`；l2 显示名改为「日服·界园」。
 - 回滚：`-set-rogue l2:rogue_phantom_l2`（旧任务文件仍在），或还原 `runner/accounts.json.bak-<时间>` 后重启 runner。
+
+## v（a19）接入界园肉鸽 + 日常循环（2026-10-24，DEPLOYED）
+
+用户指示：v 需要刷界园，和其他肉鸽号一样做「肉鸽 + 日常」循环。
+
+- **模拟器**：v 原先在 AUTO-MAS 共用的 4 号模拟器上（并行3，和 5 个官服号轮流），
+  fleet 的 `a19.emu=19` 已指向 b-13。处理：克隆 4 号 → **23 号专用模拟器**
+  （保留 v 已保存的登录，未改动其他 5 个号），`a19.emu=23`；`runner.json` 的
+  `keepEmus` 加入 `23`。
+- **AUTO-MAS**：v 用户 `Status=false`（保留用户/配置/队列项，只是不参与调度）；
+  备份 `E:\AUTO-MAS\backups\pre_v_fleet_20261024-044708`。
+- **新增任务** `config/tasks/rogue_jiegarden_a19.toml`：`Official` / `JieGarden` /
+  `difficulty=MAX` / 维什戴尔 / 先手必胜 / 借干员+非好友助战 / 不投资；
+  `StartUp.account_name="189****9036"`（MAA 账号列表显示的是掩码号，必须用掩码串匹配）。
+- **accounts.json**：a19 `rogueTask=rogue_jiegarden_a19`、`resident=true`、`enabled=true`，
+  保留 `daily_a19`；备份 `runner/accounts.json.bak-v-rogue-20261024-044636`。
+- **日常**：`daily_a19` 原先刷已关闭的 `SR-7`，改为当前 `YW-8`（与 AUTO-MAS 一致），
+  保留 `1-7` 清剩余理智；备份 `config/tasks/daily_a19.toml.bak-stage-*`。
+- **验证（2026-10-24 05:1x）**：runner 04:48:10 起 `[肉鸽:a19]`（实例 23）与 `[daily:a19]`；
+  日常插队 23m10s（`completed=6`，`SR-7` 那条按规则跳过），理智 4/210，下次日常
+  2026-10-25 05:29；05:12:02 日常结束自动放开，05:12:10 重新发车
+  `rogue_jiegarden_a19`（pid=34944），05:15 已在 `JieGarden@Roguelike@SelectTheme`
+  点中「界园志异」并进入 `JieGarden@StartExplore@Roguelike@ChooseOperFlag`。
+- **回滚**：还原 `accounts.json` / `runner.json` 备份并把 23 号模拟器停掉；
+  AUTO-MAS 把 v 的 `Status` 改回 true 即恢复原日常调度。
 
 ## 待办
 

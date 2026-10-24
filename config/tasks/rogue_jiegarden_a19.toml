@@ -1,0 +1,26 @@
+# rogue_jiegarden_a19.toml — a19（v，官服）界园肉鸽 · 一直刷
+#
+# 用户 2026-10-24 指示：v 需要刷界园，跟 l-2/l-7 一样做「肉鸽 + 日常」循环。
+# 账号 v 在 23 号专用模拟器（从 AUTO-MAS 共用的 4 号克隆，v 的登录已保留）。
+# 日常 daily_a19 到点会暂停本车道，跑完自动接回（同一套 rogueLane 机制）。
+# 配装沿用 l-2/l-7：难度 MAX / 维什戴尔 / 先手必胜 / 借干员+非好友助战 / 不投资。
+
+[[tasks]]
+name = "StartUp"
+type = "StartUp"
+params = { client_type = "Official", start_game_enabled = true, account_name = "189****9036" }
+
+[[tasks]]
+name = "Roguelike 无限"
+type = "Roguelike"
+params = {
+  theme = "JieGarden",
+  mode = 0,
+  starts_count = 99999,
+  difficulty = 2147483647,
+  core_char = "维什戴尔",
+  roles = "先手必胜",
+  use_support = true,
+  use_nonfriend_support = true,
+  investment_enabled = false,
+}

@@ -260,6 +260,7 @@ func (r *Runner) residentLoop(l *rogueLane) {
 	a := l.acc
 	log.Printf("[%s:%s] 常驻任务启动（任务 %s，实例 %s）", l.labelText(), a.ID, l.taskName(), a.Emu)
 	fails := 0
+	blankFails := 0 // 连续「无任务摘要」退出次数（黑屏/坏画面）
 	for {
 		if l.stopped() {
 			break
@@ -271,6 +272,15 @@ func (r *Runner) residentLoop(l *rogueLane) {
 		}
 		r.laneBeat(a)
 		task := l.taskName()
+		// 服务器类型按账号/任务解析；解析不到就不动设备、不发车（禁止静默落到 default profile）。
+		client, err := r.clientFor(a, task)
+		if err != nil {
+			l.setNote("配置错误：" + err.Error())
+			r.upsertRogueTask(a, task, "running", l.noteText())
+			log.Printf("[%s:%s] %v（不发车）", l.labelText(), a.ID, err)
+			sleepInterruptible(l, 60*time.Second)
+			continue
+		}
 
 		if !l.beginCycle() {
 			continue
@@ -299,7 +309,7 @@ func (r *Runner) residentLoop(l *rogueLane) {
 				sleepInterruptible(l, 2*time.Second)
 				return
 			}
-			forceStopGame(r.cfg, port, GamePackage(r.cfg, a.Client, port))
+			forceStopGame(r.cfg, port, GamePackage(r.cfg, client, port))
 			if l.isPaused() {
 				sleepInterruptible(l, 2*time.Second)
 				return
@@ -418,6 +428,20 @@ func (r *Runner) residentLoop(l *rogueLane) {
 				l.setNote(label + map[bool]string{true: "完成", false: "失败"}[ok] + why)
 				r.setLoopResult(a.ID, map[bool]string{true: "ok", false: "fail"}[ok]+why)
 				log.Printf("[%s:%s] 任务退出：ok=%v %s → 立即重来", label, a.ID, ok, why)
+				// 黑屏/坏画面：MAA 连任务摘要都没有（completed=0 errored=0），
+				// 重启 MAA 没用，必须硬重启模拟器。连续 2 次才动手，避免误判。
+				if !ok && isBlankRun(why) {
+					blankFails++
+					log.Printf("[%s:%s] 无任务摘要（疑似黑屏）第 %d 次", label, a.ID, blankFails)
+					if blankFails >= 2 && !l.isPaused() {
+						l.setNote("连续无任务摘要，硬重启模拟器")
+						log.Printf("[%s:%s] 连续 %d 次无任务摘要 → 硬重启模拟器", label, a.ID, blankFails)
+						DeviceHardReset(r.cfg, a.Emu)
+						blankFails = 0
+					}
+				} else {
+					blankFails = 0
+				}
 			} else {
 				l.setNote(reason)
 				r.setLoopResult(a.ID, reason)
@@ -429,6 +453,13 @@ func (r *Runner) residentLoop(l *rogueLane) {
 	}
 	r.upsertRogueTask(a, l.taskName(), "done", "已停止")
 	log.Printf("[%s:%s] 常驻任务已停止", l.labelText(), a.ID)
+}
+
+// isBlankRun 判断一次自然退出是不是「连任务摘要都没有」（黑屏/坏画面）。
+func isBlankRun(why string) bool {
+	return strings.Contains(why, "completed=0") &&
+		strings.Contains(why, "errored=0") &&
+		strings.Contains(why, "hardFail=false")
 }
 
 // ---- 与日常互斥 ---------------------------------------------------------------
@@ -445,8 +476,13 @@ func (r *Runner) residentLabelFor(accountID string) string {
 }
 
 // pauseResident 暂停某账号的常驻任务（日常要插队）：杀 maa + 等它真的停下（模拟器不动）。
+// 卫戍协议车道可能在硬重启模拟器，给 5 分钟收尾；肉鸽仍是 30 秒。
 func (r *Runner) pauseResident(accountID string) error {
-	return r.pauseResidentWithin(accountID, 30*time.Second)
+	timeout := 30 * time.Second
+	if r.residentLabelFor(accountID) == "卫戍" {
+		timeout = 5 * time.Minute
+	}
+	return r.pauseResidentWithin(accountID, timeout)
 }
 
 func (r *Runner) pauseResidentWithin(accountID string, timeout time.Duration) error {

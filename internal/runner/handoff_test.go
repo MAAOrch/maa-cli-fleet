@@ -13,7 +13,15 @@ import (
 
 func testRunner(t *testing.T) *Runner {
 	t.Helper()
-	return &Runner{cfg: Config{MaxConcurrent: 4, StateFile: filepath.Join(t.TempDir(), "state.json"), MumuManager: "fleet-test-no-device", AdbExe: "fleet-test-no-adb"}, state: &State{Tasks: map[string]*Task{}}, running: map[string]bool{}, active: map[string]*Task{}, lanes: map[string]*rogueLane{}, maaPids: map[string]int{}}
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, "config")
+	if err := os.MkdirAll(filepath.Join(cfgDir, "profiles"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "profiles", "Test.toml"), []byte("[resource]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return &Runner{cfg: Config{MaxConcurrent: 4, ConfigDir: cfgDir, StateFile: filepath.Join(dir, "state.json"), MumuManager: "fleet-test-no-device", AdbExe: "fleet-test-no-adb"}, state: &State{Tasks: map[string]*Task{}}, running: map[string]bool{}, active: map[string]*Task{}, lanes: map[string]*rogueLane{}, maaPids: map[string]int{}}
 }
 
 // The test executable acts as MuMu only in subprocesses, never contacts devices.
@@ -72,7 +80,7 @@ func TestPauseWaitsForDeviceUpQuiescence(t *testing.T) {
 	gate := filepath.Join(filepath.Dir(r.cfg.StateFile), "gate")
 	t.Setenv("FLEET_TEST_MUMU", gate+".commands")
 	t.Setenv("FLEET_TEST_GATE", gate)
-	a := model.Account{ID: "l1", Enabled: true, RogueTask: "rogue", Emu: "1"}
+	a := model.Account{ID: "l1", Enabled: true, RogueTask: "rogue", Emu: "1", Client: "Test"}
 	l := &rogueLane{acc: a}
 	r.lanes[a.ID] = l
 	done := make(chan struct{})
@@ -110,7 +118,7 @@ func TestDailyFailsClosedOnResidentPauseTimeout(t *testing.T) {
 	r.cfg.LogDir = filepath.Dir(r.cfg.StateFile)
 	commands := filepath.Join(r.cfg.LogDir, "commands")
 	t.Setenv("FLEET_TEST_MUMU", commands)
-	a := model.Account{ID: "l1", Enabled: true, Resident: true, RogueTask: "rogue", Emu: "1"}
+	a := model.Account{ID: "l1", Enabled: true, Resident: true, RogueTask: "rogue", Emu: "1", Client: "Test"}
 	r.accounts = []model.Account{a}
 	l := &rogueLane{acc: a}
 	l.beginCycle()
