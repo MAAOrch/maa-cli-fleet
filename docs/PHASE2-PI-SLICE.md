@@ -25,6 +25,8 @@ fleet 只负责起进程、看退出码、收日志；任务内导航/识点由 
 | PI 版本 | v5.10.4 的 README 标注支持到 PI v2.5.0；本 demo 只用 v2.1 字段 |
 | 管理员权限 | 部分控制器会 UAC 提权；ADB 路径一般不需要，无人值守前要实测 |
 | 任务选择 | `-d` 用配置里的 `task` 列表；要换任务/选项需改 `maa_pi_config.json`（或等新版子命令 CLI） |
+| `MaaAgentBinary` | 在 MAA 包的 `share/`，不是 `bin/`；`pi/demo/setup.ps1` 会自动复制 |
+| v5.10.4 冒烟 | interface/config/tasks 解析通过；ADB control unit 创建失败（`Parse config failed`）后 MaaPiCli segfault；真机 canary 用 v5.14.x+ |
 
 `maa_pi_config.json` 关键结构（来自 `ProjectInterface/Types.h`）：
 
@@ -60,6 +62,7 @@ fleet 只负责起进程、看退出码、收日志；任务内导航/识点由 
 ## 3. 真机 Canary（待跑）
 
 前提：一台测试模拟器/账号，**不要用生产车道**；MaaPiCli 与 `pi/demo` 在同一目录。
+建议用 MAA v5.14.x+（v5.10.4 已验证项目解析，但 ADB control unit 创建会失败）。
 
 1. 准备：
 

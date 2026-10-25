@@ -18,7 +18,30 @@ MaaPiCli 以 **exe 所在目录** 为项目根，所以 `MaaPiCli.exe` 必须和
 .\setup.ps1 -MaaBin "C:\Users\xiach\Downloads\MAA-win-x86_64-v5.10.4\bin"
 ```
 
-脚本优先用 NTFS 硬链接（同盘不占额外空间），跨盘自动退化为复制。
+脚本优先用 NTFS 硬链接（同盘不占额外空间），跨盘自动退化为复制；
+`MaaAgentBinary` 会自动从 `bin` 或 MAA 包的 `share/` 复制过来（ADB 控制器需要它）。
+
+## 已知问题（MAA v5.10.4）
+
+本机用 v5.10.4 的 `MaaPiCli -d` 冒烟时，项目/配置/任务都能正确打印：
+
+```text
+Fleet Demo
+### Current configuration ###
+Controller: Android ...
+Resource: Demo
+Tasks: - Nav.ToHome
+```
+
+但创建 ADB control unit 时失败：
+
+```text
+[MaaAdbControllerCreate] Parse config failed, or not object, invalid config
+```
+
+随后 MaaPiCli 自身 segfault。这个旧版本的 MaaPiCli/ADB 配置兼容性有问题；
+**真机 canary 建议用 v5.14.x 或更新版本的 MaaPiCli**（`ARCHITECTURE-EXECUTOR.md`
+的标准基线也是 v5.14.x）。executor 层不受影响，单测用假命令覆盖。
 
 ## 2. 生成配置
 

@@ -26,10 +26,21 @@ Get-ChildItem $MaaBin -File | ForEach-Object {
     }
 }
 
-# MaaAgentBinary 是目录，不能硬链接；有就复制。
-$agent = Join-Path $MaaBin 'MaaAgentBinary'
-if (Test-Path $agent) {
-    Copy-Item $agent (Join-Path $dest 'MaaAgentBinary') -Recurse -Force
+# MaaAgentBinary 可能不在 bin/，而在 MAA 包的 share/。
+$agentCandidates = @(
+    (Join-Path $MaaBin 'MaaAgentBinary'),
+    (Join-Path (Split-Path $MaaBin -Parent) 'share\MaaAgentBinary')
+)
+$agentCopied = $false
+foreach ($agent in $agentCandidates) {
+    if (Test-Path $agent) {
+        Copy-Item $agent (Join-Path $dest 'MaaAgentBinary') -Recurse -Force
+        $agentCopied = $true
+        break
+    }
+}
+if (-not $agentCopied) {
+    Write-Warning "MaaAgentBinary not found under $MaaBin or its ../share; ADB controller may fail to create."
 }
 
 Write-Host "Linked $linked files, copied $copied files from $MaaBin"
