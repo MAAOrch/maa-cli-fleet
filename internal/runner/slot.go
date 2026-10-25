@@ -2,6 +2,7 @@ package runner
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,6 +29,14 @@ func (r *Runner) runTask(t *Task) {
 	}
 	start := time.Now()
 	log.Printf("[%s] 开始 %s（%s，第 %d 次）", t.Key, acc.Name, t.Kind, t.Attempts)
+
+	// 未知 Kind 必须大声报错并停：不许静默跳过，也不许先动设备再发现没有执行器。
+	ex, ok := r.ensureExecutors().For(t.Kind)
+	if !ok {
+		r.failTerminal(t, "没有注册执行器："+t.Kind)
+		log.Printf("[%s] 没有注册执行器：%s（不发车）", t.Key, t.Kind)
+		return
+	}
 
 	// 服务器类型按账号/任务解析；解析不到就不动设备、不发车（禁止静默落到 default profile）。
 	client, err := r.profileFor(acc, t.File)
@@ -67,8 +76,12 @@ func (r *Runner) runTask(t *Task) {
 		forceStopGame(r.cfg, port, GamePackage(r.cfg, client, port))
 	}
 
-	ok2, out, err := r.execMaa(acc, port, t.File)
-	note := ""
+	res, err := ex.Run(context.Background(), Job{
+		Key: t.Key, Kind: t.Kind, Account: acc,
+		Device:   DeviceRef{EmuIndex: acc.Emu, ADBAddr: port},
+		TaskFile: t.File,
+	})
+	ok2, out, note := res.OK, res.OutFile, res.Note
 	if err != nil {
 		note = err.Error()
 	}
@@ -322,6 +335,14 @@ func (r *Runner) scheduleNextDaily(t *Task, a model.Account) {
 	}
 	t.NextDue = time.Now().Add(time.Duration(mins) * time.Minute).Format(stampLayout)
 	log.Printf("[%s] 理智 %d/%d → 下次日常 %s（%.1f 小时后，自循环）", t.Key, cur, max, t.NextDue, float64(mins)/60)
+}
+
+// failTerminal：不可重试的错误直接判失败，避免每轮 Tick 重新捡起。
+func (r *Runner) failTerminal(t *Task, note string) {
+	r.mu.Lock()
+	t.Attempts = maxAttempts
+	r.mu.Unlock()
+	r.finishTask(t, false, note, "")
 }
 
 // finishTask：写任务状态（未超次数的失败会回到 queued，下一轮 Tick 会再捡）。

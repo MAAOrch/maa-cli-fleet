@@ -1,0 +1,10 @@
+# ra_nav_lx.toml — 只读检查：唤醒后导航到生息演算主题入口，不做任何演算动作
+[[tasks]]
+name = "开始唤醒"
+type = "StartUp"
+params = { client_type = "Official", start_game_enabled = true }
+
+[[tasks]]
+name = "导航到生息演算"
+type = "Custom"
+params = { task_names = ["RA@Navigation"] }

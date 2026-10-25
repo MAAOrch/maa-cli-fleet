@@ -1,0 +1,45 @@
+{
+  "RA@Tales@Enter": {
+    "doc": "新任务：从主界面进入沙洲遗闻主题入口（终端→长期探索→查看全部主题→沙洲遗闻→进入主题）",
+    "algorithm": "JustReturn",
+    "action": "ClickRect",
+    "specificRect": [860, 160, 80, 60],
+    "postDelay": 2500,
+    "next": ["RA@Tales@LongTerm", "RA@Tales@Enter"]
+  },
+  "RA@Tales@LongTerm": {
+    "doc": "点击底部「长期探索」页签",
+    "algorithm": "JustReturn",
+    "action": "ClickRect",
+    "specificRect": [960, 665, 40, 30],
+    "postDelay": 3000,
+    "next": ["RA@Tales@AllThemes", "RA@Tales@LongTerm"]
+  },
+  "RA@Tales@AllThemes": {
+    "doc": "生息演算卡片上的「查看全部主题」",
+    "algorithm": "OcrDetect",
+    "text": ["查看全部主题"],
+    "roi": [1020, 465, 250, 70],
+    "action": "ClickSelf",
+    "postDelay": 3000,
+    "next": ["RA@Tales@Theme", "RA@Tales@AllThemes"]
+  },
+  "RA@Tales@Theme": {
+    "doc": "主题列表选中「沙洲遗闻」",
+    "algorithm": "OcrDetect",
+    "text": ["沙洲遗闻"],
+    "roi": [50, 350, 280, 80],
+    "action": "ClickSelf",
+    "postDelay": 1500,
+    "next": ["RA@Tales@EnterBtn", "RA@Tales@Theme"]
+  },
+  "RA@Tales@EnterBtn": {
+    "doc": "点击「进入主题」",
+    "algorithm": "OcrDetect",
+    "text": ["进入主题"],
+    "roi": [1020, 595, 260, 80],
+    "action": "ClickSelf",
+    "postDelay": 9000,
+    "next": ["Stop"]
+  }
+}

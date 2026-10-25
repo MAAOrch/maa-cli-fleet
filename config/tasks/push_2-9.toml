@@ -1,0 +1,10 @@
+# push_2-9.toml — 主线推关临时任务（先 2-9）
+[[tasks]]
+name = "开始唤醒"
+type = "StartUp"
+params = { client_type = "Official", start_game_enabled = true }
+
+[[tasks]]
+name = "打2-9"
+type = "Fight"
+params = { stage = "2-9", medicine = 0, stone = 0, series = 1, times = 1, use_prts = false }

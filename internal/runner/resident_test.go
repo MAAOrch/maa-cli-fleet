@@ -63,3 +63,71 @@ func TestSpaSpinLimitIsLonger(t *testing.T) {
 		t.Fatalf("rogue spinLimit = %v", got)
 	}
 }
+
+func TestResidentLabelReclamation(t *testing.T) {
+	for _, task := range []string{"ra_cycle_lx", "reclamation_tales_lx", "reclamation_tales"} {
+		if got := residentLabel(task); got != "生息" {
+			t.Fatalf("residentLabel(%q) = %q, want 生息", task, got)
+		}
+	}
+	ra := &rogueLane{label: "生息"}
+	if got := ra.spinLimit(); got != spaSpinMin*time.Minute {
+		t.Fatalf("reclamation spinLimit = %v", got)
+	}
+}
+
+func TestRotationTasks(t *testing.T) {
+	cases := []struct {
+		name string
+		acc  model.Account
+		want []string
+	}{
+		{"rotation list", model.Account{ResidentTasks: []string{"ra_cycle_lx", " ", "rogue_jiegarden_lx"}}, []string{"ra_cycle_lx", "rogue_jiegarden_lx"}},
+		{"single fallback", model.Account{ResidentTask: "spa_a32"}, []string{"spa_a32"}},
+		{"empty", model.Account{}, nil},
+	}
+	for _, c := range cases {
+		got := c.acc.RotationTasks()
+		if len(got) != len(c.want) {
+			t.Fatalf("%s: %v want %v", c.name, got, c.want)
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Fatalf("%s: %v want %v", c.name, got, c.want)
+			}
+		}
+	}
+}
+
+func TestRotateDueAndAdvance(t *testing.T) {
+	tasks := []string{"ra_cycle_lx", "rogue_jiegarden_lx"}
+	l := &rogueLane{tasks: tasks, rotateMin: 240, taskSince: time.Now()}
+	if l.rotateDue(time.Now().Add(239 * time.Minute)) {
+		t.Fatal("239 分钟不该轮换")
+	}
+	if !l.rotateDue(time.Now().Add(241 * time.Minute)) {
+		t.Fatal("241 分钟应该轮换")
+	}
+	next, ok := l.advanceTask(time.Now())
+	if !ok || next != "rogue_jiegarden_lx" {
+		t.Fatalf("advanceTask = %q,%v", next, ok)
+	}
+	if l.labelText() != "肉鸽" {
+		t.Fatalf("label = %q", l.labelText())
+	}
+	next, ok = l.advanceTask(time.Now())
+	if !ok || next != "ra_cycle_lx" {
+		t.Fatalf("wrap advanceTask = %q,%v", next, ok)
+	}
+	if l.labelText() != "生息" {
+		t.Fatalf("label = %q", l.labelText())
+	}
+	// 单任务不轮换
+	single := &rogueLane{tasks: []string{"ra_cycle_lx"}, rotateMin: 1, taskSince: time.Now().Add(-24 * time.Hour)}
+	if single.rotateDue(time.Now()) {
+		t.Fatal("单任务不该轮换")
+	}
+	if _, ok := single.advanceTask(time.Now()); ok {
+		t.Fatal("单任务 advanceTask 应返回 false")
+	}
+}

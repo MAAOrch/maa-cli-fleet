@@ -71,6 +71,32 @@ type Account struct {
 	RogueTask    string `json:"rogueTask,omitempty"`
 	Resident     bool   `json:"resident,omitempty"`
 	StateDir     string `json:"stateDir,omitempty"` // MAA_STATE_DIR 覆盖（绝对路径；默认 stateRoot/state_<id>）
+
+	// ResidentPreCommand 每轮常驻任务发车前执行的外部命令，{addr} 会替换成 127.0.0.1:<端口>。
+	// 用途：生息演算 mode 0 之前删档（MAA 遇到存档只会停下，不会删）。
+	// 命令在 force-stop 游戏之前执行，此时游戏仍停在上一轮结束的画面。
+	ResidentPreCommand string `json:"residentPreCommand,omitempty"`
+
+	// 24h 轮换：ResidentTasks 非空时按顺序轮换这些任务，每个任务跑 ResidentRotateMinutes 分钟；
+	// 0 表示不按时间轮换（只在当前任务自然退出后切下一个）。
+	ResidentTasks         []string `json:"residentTasks,omitempty"`
+	ResidentRotateMinutes int      `json:"residentRotateMinutes,omitempty"`
+}
+
+// RotationTasks 返回轮换任务列表（去空）；没有轮换配置时退化为单任务。
+func (a Account) RotationTasks() []string {
+	out := make([]string, 0, len(a.ResidentTasks)+1)
+	for _, t := range a.ResidentTasks {
+		if s := strings.TrimSpace(t); s != "" {
+			out = append(out, s)
+		}
+	}
+	if len(out) == 0 {
+		if s := a.ResidentTaskFile(); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // ResidentTaskFile 返回常驻任务文件名：新字段优先，旧的 rogueTask 兜底。

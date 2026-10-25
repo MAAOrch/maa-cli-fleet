@@ -1,0 +1,5 @@
+# tutorial_fix_lx.toml — 一次性清理生息第一天教学（后舍）
+[[tasks]]
+name = "清教学"
+type = "Custom"
+params = { task_names = ["Tales@RA@PNS-EnterBaseCamp"] }

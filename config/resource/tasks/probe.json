@@ -1,0 +1,10 @@
+{
+  "Probe@FullScreen": {
+    "algorithm": "OcrDetect",
+    "roi": [0, 0, 1280, 720],
+    "text": ["@probe_never_matches"],
+    "action": "DoNothing",
+    "retry_times": 1,
+    "next": ["Stop"]
+  }
+}

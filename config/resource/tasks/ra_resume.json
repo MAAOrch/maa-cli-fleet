@@ -1,0 +1,11 @@
+{
+  "Tales@RA@PNS-Resume": {
+    "doc": "新任务覆盖：有存档时点「继续演算」并接回无存档刷点流程（原版是 DoNothing，遇到存档直接停）",
+    "algorithm": "OcrDetect",
+    "text": ["继续演算"],
+    "roi": [1040, 610, 200, 70],
+    "action": "ClickSelf",
+    "postDelay": 9000,
+    "next": ["Tales@RA@PNS-EnterNodeThenLeave", "Tales@RA@PNS-SkipToCalc", "Tales@RA@PNS-Resume"]
+  }
+}

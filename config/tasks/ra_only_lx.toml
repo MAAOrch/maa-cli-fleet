@@ -1,0 +1,12 @@
+# ra_only_lx.toml — 直接从沙洲遗闻主题入口开始生息（不含 StartUp）
+[[tasks]]
+name = "生息演算"
+type = "Reclamation"
+params = {
+  theme = "Tales",
+  mode = 0,
+  tools_to_craft = ["荧光棒"],
+  increase_mode = 0,
+  num_craft_batches = 16,
+  clear_store = true,
+}

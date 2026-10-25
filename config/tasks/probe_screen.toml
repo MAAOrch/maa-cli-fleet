@@ -1,0 +1,10 @@
+# probe_screen.toml — 只读：唤醒后用 MAA 自己的 OCR 扫一遍全屏，结果在 asst.log 的 WordOcr 行
+[[tasks]]
+name = "开始唤醒"
+type = "StartUp"
+params = { client_type = "Official", start_game_enabled = true }
+
+[[tasks]]
+name = "全屏 OCR"
+type = "Custom"
+params = { task_names = ["Probe@FullScreen"] }

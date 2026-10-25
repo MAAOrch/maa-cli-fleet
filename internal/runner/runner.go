@@ -58,16 +58,18 @@ type State struct {
 
 // Runner 是调度器实例。
 type Runner struct {
-	cfg      Config
-	accounts []model.Account
-	state    *State
-	mu       sync.Mutex
-	tickMu   sync.Mutex      // serialize queue input, resource sampling and Tick
-	running  map[string]bool // accountID → 该账号有任务在跑（串行保护）
-	active   map[string]*Task
-	lanes    map[string]*rogueLane // 常驻肉鸽车道（accountID → lane）
-	httpc    *http.Client
-	token    string
+	cfg       Config
+	accounts  []model.Account
+	state     *State
+	mu        sync.Mutex
+	tickMu    sync.Mutex      // serialize queue input, resource sampling and Tick
+	running   map[string]bool // accountID → 该账号有任务在跑（串行保护）
+	active    map[string]*Task
+	lanes     map[string]*rogueLane // 常驻肉鸽车道（accountID → lane）
+	executors *Registry             // Kind → Executor（daily/ann 先接；PI 任务后续注册）
+	execOnce  sync.Once             // 手工构造 Runner（测试/一次性命令）时惰性补注册
+	httpc     *http.Client
+	token     string
 
 	roster *Roster // 班表（nil = 没有/关着 → 旧行为：理智自循环）
 
@@ -106,7 +108,14 @@ func New(cfgPath string) (*Runner, error) {
 	}
 	r := &Runner{cfg: cfg, state: &State{Tasks: map[string]*Task{}},
 		running: map[string]bool{}, active: map[string]*Task{}, lanes: map[string]*rogueLane{},
-		maaPids: map[string]int{}, httpc: &http.Client{Timeout: 30 * time.Second}}
+		executors: NewRegistry(), maaPids: map[string]int{}, httpc: &http.Client{Timeout: 30 * time.Second}}
+
+	maa := &maaExecutor{run: r.execMaa}
+	for _, kind := range []string{"daily", "ann"} {
+		if err := r.executors.Register(kind, maa); err != nil {
+			return nil, err
+		}
+	}
 
 	if cfg.LogFile != "" {
 		_ = os.MkdirAll(filepath.Dir(cfg.LogFile), 0o755)

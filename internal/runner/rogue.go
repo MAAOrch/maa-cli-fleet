@@ -2,10 +2,12 @@ package runner
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -34,6 +36,7 @@ import (
 const rogueStaleMin = 5 // 日志多少分钟没更新算卡死
 const rogueSpinMin = 8  // 同一 cur_task 连续多久算空转。2026-10-05 健康局最长 2.5 分钟（l-1 Begin / l-5 空任务）
 const spaSpinMin = 20   // 卫戍协议一局自动作战可能很久，同一 cur_task 的容忍时间放宽
+const rotateReason = "轮换到下一个任务"
 
 type rogueLane struct {
 	acc model.Account
@@ -49,6 +52,12 @@ type rogueLane struct {
 	restarts  int
 	lastAt    time.Time
 	idle      chan struct{} // non-nil covers DeviceUp, force-stop, launch, Wait and cleanup
+
+	// 24h 轮换状态
+	tasks     []string  // 轮换任务列表（空/单元素 = 不轮换）
+	taskIdx   int       // 当前任务下标
+	rotateMin int       // 每个任务跑多少分钟；0 = 不按时间轮换
+	taskSince time.Time // 当前任务开始时间
 }
 
 func (l *rogueLane) isPaused() bool   { l.mu.Lock(); defer l.mu.Unlock(); return l.paused }
@@ -109,11 +118,11 @@ func (l *rogueLane) labelText() string {
 	return l.label
 }
 
-// spinLimit 同一 cur_task 连续多久算空转（卫戍协议一局长，放宽）。
+// spinLimit 同一 cur_task 连续多久算空转（卫戍协议/生息演算一局长，放宽）。
 func (l *rogueLane) spinLimit() time.Duration {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.label == "卫戍" {
+	if l.label == "卫戍" || l.label == "生息" {
 		return spaSpinMin * time.Minute
 	}
 	return rogueSpinMin * time.Minute
@@ -134,6 +143,8 @@ func residentLabel(task string) string {
 	switch {
 	case strings.Contains(t, "spa"), strings.Contains(t, "weisheng"), strings.Contains(t, "wsxy"):
 		return "卫戍"
+	case strings.Contains(t, "reclamation"), strings.Contains(t, "ra_"), strings.Contains(t, "tales"):
+		return "生息"
 	default:
 		return "肉鸽"
 	}
@@ -158,7 +169,13 @@ func (r *Runner) startLane(a model.Account, task string) *rogueLane {
 		r.mu.Unlock()
 		return l
 	}
-	l := &rogueLane{acc: a, task: task, label: residentLabel(task), note: "常驻"}
+	l := &rogueLane{acc: a, task: task, label: residentLabel(task), note: "常驻", tasks: a.RotationTasks(), rotateMin: a.ResidentRotateMinutes, taskSince: time.Now()}
+	for i, t := range l.tasks {
+		if t == task {
+			l.taskIdx = i
+			break
+		}
+	}
 	r.lanes[a.ID] = l
 	r.mu.Unlock()
 	r.upsertRogueTask(a, task, "running", "常驻")
@@ -255,6 +272,55 @@ func (r *Runner) setLoopRestarts(accountID string, n int) {
 	r.saveState()
 }
 
+// rotateDue 是否到了轮换时间。
+func (l *rogueLane) rotateDue(now time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.tasks) <= 1 || l.rotateMin <= 0 || l.taskSince.IsZero() {
+		return false
+	}
+	return now.Sub(l.taskSince) >= time.Duration(l.rotateMin)*time.Minute
+}
+
+// advanceTask 切到下一个轮换任务（循环）。
+func (l *rogueLane) advanceTask(now time.Time) (string, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.tasks) <= 1 {
+		return "", false
+	}
+	l.taskIdx = (l.taskIdx + 1) % len(l.tasks)
+	l.task = l.tasks[l.taskIdx]
+	l.label = residentLabel(l.task)
+	l.taskSince = now
+	return l.task, true
+}
+
+// runResidentPre 执行常驻任务的前置命令（为空则跳过）。
+// 命令里的 {addr} 会替换成 127.0.0.1:<port>，超时 15 分钟；失败只记日志，不阻塞发车。
+func (r *Runner) runResidentPre(a model.Account, port string) error {
+	tpl := strings.TrimSpace(a.ResidentPreCommand)
+	if tpl == "" {
+		return nil
+	}
+	cmdline := strings.ReplaceAll(tpl, "{addr}", "127.0.0.1:"+port)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+	log.Printf("[常驻:%s] 前置命令：%s", a.ID, cmdline)
+	out, err := exec.CommandContext(ctx, "cmd", "/c", cmdline).CombinedOutput()
+	text := strings.TrimSpace(string(out))
+	if text != "" {
+		if len(text) > 600 {
+			text = text[len(text)-600:]
+		}
+		log.Printf("[常驻:%s] 前置命令输出：%s", a.ID, text)
+	}
+	if err != nil {
+		return fmt.Errorf("%v：%s", err, text)
+	}
+	return nil
+}
+
 // residentLoop 一台机的常驻任务循环。
 func (r *Runner) residentLoop(l *rogueLane) {
 	a := l.acc
@@ -309,7 +375,21 @@ func (r *Runner) residentLoop(l *rogueLane) {
 				sleepInterruptible(l, 2*time.Second)
 				return
 			}
-			forceStopGame(r.cfg, port, GamePackage(r.cfg, client, port))
+			// 常驻前置命令（如生息删档）：必须在 force-stop 之前跑，
+			// 因为脚本要操作上一轮结束时的游戏画面（主题入口/大地图）。
+			if err := r.runResidentPre(a, port); err != nil {
+				l.setNote("前置命令失败：" + err.Error())
+				log.Printf("[%s:%s] 前置命令失败：%v", l.labelText(), a.ID, err)
+			}
+			if l.isPaused() {
+				sleepInterruptible(l, 2*time.Second)
+				return
+			}
+			// 有前置命令时不动游戏：脚本要沿用上一轮结束时的画面，
+			// 并自己把游戏留在发车位置（例如生息演算主题入口）。
+			if strings.TrimSpace(a.ResidentPreCommand) == "" {
+				forceStopGame(r.cfg, port, GamePackage(r.cfg, client, port))
+			}
 			if l.isPaused() {
 				sleepInterruptible(l, 2*time.Second)
 				return
@@ -373,6 +453,11 @@ func (r *Runner) residentLoop(l *rogueLane) {
 					reason = "日常插队（暂停）"
 					break
 				}
+				if l.rotateDue(time.Now()) {
+					killMaa(run)
+					reason = rotateReason
+					break
+				}
 				r.laneBeat(a)
 				if mt := r.logModTime(a); mt.After(lastMod) {
 					lastMod = mt
@@ -420,6 +505,15 @@ func (r *Runner) residentLoop(l *rogueLane) {
 				log.Printf("[%s:%s] 切换任务 → %s", l.labelText(), a.ID, task)
 				r.upsertRogueTask(a, task, "running", "切换任务")
 				return
+			}
+			// 轮换到点：切下一个任务，不判 out、不睡 10 秒，立刻重发。
+			if reason == rotateReason {
+				if next, ok := l.advanceTask(time.Now()); ok {
+					l.setNote("轮换任务：" + next)
+					log.Printf("[%s:%s] 轮换任务 → %s", l.labelText(), a.ID, next)
+					r.upsertRogueTask(a, next, "running", "轮换任务")
+					return
+				}
 			}
 			// 自然退出 → 判 out（成功/失败）；被杀 → 只记原因
 			if reason == "任务退出" {

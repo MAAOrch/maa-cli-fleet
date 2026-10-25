@@ -1,0 +1,22 @@
+# ra_cycle_lx.toml — 蓝熹生息一轮：唤醒 → 进沙洲遗闻 → 生息 mode 0（有存档则续跑）
+[[tasks]]
+name = "开始唤醒"
+type = "StartUp"
+params = { client_type = "Official", start_game_enabled = true }
+
+[[tasks]]
+name = "进入沙洲遗闻"
+type = "Custom"
+params = { task_names = ["RA@Tales@Enter"] }
+
+[[tasks]]
+name = "生息演算"
+type = "Reclamation"
+params = {
+  theme = "Tales",
+  mode = 0,
+  tools_to_craft = ["荧光棒"],
+  increase_mode = 0,
+  num_craft_batches = 16,
+  clear_store = true,
+}
