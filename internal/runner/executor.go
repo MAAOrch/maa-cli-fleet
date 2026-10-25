@@ -40,6 +40,14 @@ type Executor interface {
 	Run(ctx context.Context, job Job) (Result, error)
 }
 
+// ResidentExecutor 是常驻车道的扩展契约：Start 返回可被看护/轮换/暂停 kill 的运行句柄，
+// Judge 在自然退出后判定 out。普通排队任务只实现 Executor 即可。
+type ResidentExecutor interface {
+	Executor
+	Start(job Job) (*maaRun, error)
+	Judge(outFile string) (bool, string)
+}
+
 // Registry 是 Kind → Executor 的注册表；启动时注册，未知 Kind 必须报错而不是静默跳过。
 type Registry struct {
 	m map[string]Executor

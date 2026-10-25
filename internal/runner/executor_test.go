@@ -115,6 +115,56 @@ func TestMaaExecutorHonorsCanceledContext(t *testing.T) {
 	}
 }
 
+func TestMaaExecutorStartAndJudge(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "out.log")
+	run := &maaRun{out: out, task: "ra_cycle_lx"}
+	var gotPort, gotTask string
+	ex := &maaExecutor{
+		start: func(a model.Account, port, task string) (*maaRun, error) {
+			if a.ID != "lx" {
+				t.Fatalf("account = %q, want lx", a.ID)
+			}
+			gotPort, gotTask = port, task
+			return run, nil
+		},
+		judge: func(p string) (bool, string) {
+			if p != out {
+				t.Fatalf("judge path = %q, want %q", p, out)
+			}
+			return true, "ok"
+		},
+	}
+
+	got, err := ex.Start(Job{
+		Account:  model.Account{ID: "lx"},
+		Device:   DeviceRef{ADBAddr: "16672"},
+		TaskFile: "ra_cycle_lx",
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if got != run {
+		t.Fatalf("Start returned %p, want %p", got, run)
+	}
+	if gotPort != "16672" || gotTask != "ra_cycle_lx" {
+		t.Fatalf("Start got (%q, %q), want (16672, ra_cycle_lx)", gotPort, gotTask)
+	}
+	ok, why := ex.Judge(out)
+	if !ok || why != "ok" {
+		t.Fatalf("Judge = %v, %q", ok, why)
+	}
+}
+
+func TestMaaExecutorStartNilFailsClosed(t *testing.T) {
+	ex := &maaExecutor{}
+	if _, err := ex.Start(Job{}); err == nil {
+		t.Fatal("Start with nil start func should fail")
+	}
+	if ok, why := ex.Judge("x"); ok || why == "" {
+		t.Fatalf("Judge with nil judge = %v, %q; want false + note", ok, why)
+	}
+}
+
 // newRunnerFixture 写最小的 runner.json/accounts.json/state.json，供 New() 回归用。
 func newRunnerFixture(t *testing.T) string {
 	t.Helper()
@@ -138,16 +188,20 @@ func newRunnerFixture(t *testing.T) string {
 	return filepath.Join(dir, "runner.json")
 }
 
-func TestNewRegistersMaaDailyAndAnn(t *testing.T) {
+func TestNewRegistersMaaKinds(t *testing.T) {
 	r, err := New(newRunnerFixture(t))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if got := r.executors.Kinds(); !slices.Equal(got, []string{"ann", "daily"}) {
-		t.Fatalf("registered kinds = %v, want [ann daily]", got)
+	if got := r.executors.Kinds(); !slices.Equal(got, []string{"ann", "daily", "rogue"}) {
+		t.Fatalf("registered kinds = %v, want [ann daily rogue]", got)
 	}
-	if _, ok := r.executors.For("rogue"); ok {
-		t.Fatal("Phase 1 keeps the resident lane on startMaa; rogue must not be registered yet")
+	ex, ok := r.executors.For("rogue")
+	if !ok {
+		t.Fatal("rogue must be registered")
+	}
+	if _, ok := ex.(ResidentExecutor); !ok {
+		t.Fatalf("rogue executor %T must implement ResidentExecutor", ex)
 	}
 }
 

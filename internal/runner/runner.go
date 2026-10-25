@@ -110,8 +110,8 @@ func New(cfgPath string) (*Runner, error) {
 		running: map[string]bool{}, active: map[string]*Task{}, lanes: map[string]*rogueLane{},
 		executors: NewRegistry(), maaPids: map[string]int{}, httpc: &http.Client{Timeout: 30 * time.Second}}
 
-	maa := &maaExecutor{run: r.execMaa}
-	for _, kind := range []string{"daily", "ann"} {
+	maa := &maaExecutor{run: r.execMaa, start: r.startMaa, judge: r.judgeOutFile}
+	for _, kind := range []string{"daily", "ann", "rogue"} {
 		if err := r.executors.Register(kind, maa); err != nil {
 			return nil, err
 		}

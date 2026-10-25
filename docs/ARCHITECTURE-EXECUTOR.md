@@ -1,6 +1,6 @@
 # 执行面分层：控制面 / Executor / Resource / 人机面
 
-> 2026-10-25 · 状态：**PARTIALLY IMPLEMENTED（Phase 1 已落地：daily/ann 走 Executor；rogue 车道保留原路径）** · 本文只写边界与契约，不含代码改动
+> 2026-10-25 · 状态：**IMPLEMENTED（Phase 1 + 1.5：daily/ann 走 Executor；rogue 通过 ResidentExecutor 的 Start/Judge 接入，看护/轮换仍由车道驱动）** · 本文只写边界与契约，不含代码改动
 > 缘起：fleet 要从 MAA 单一执行线延展到 MaaFramework / PI 资源；先把“谁执行、执行什么、怎么加新类型”定死，避免调度器里继续长 `switch`。
 > 关联：`ARCHITECTURE-NODE-SELF.md`（机端自管铁律）、`RUNNER-UNIFIED-TASKS.md`（三类任务）、`RELEASE-STANDARD.md`（上线门槛）、`NODE-BOUNDARY-CONVERGENCE.md`（策略/执行边界）。
 
@@ -34,7 +34,7 @@ fleet 不自己“会”玩游戏：它把任务交给**按类型注册的 execu
 | 现有能力 | 代码 | 新角色 | 迁移方式 |
 |---|---|---|---|
 | 日常 / 剿灭排队 | `internal/runner/slot.go`（`startMaa` / `judgeOutFile`） | MAA executor（Kind=`daily` / `ann`） | Phase 1 包一层，行为不变 |
-| 肉鸽 / 卫戍常驻车道 | `internal/runner/rogue.go`（`residentLoop`） | MAA resident executor（Kind=`rogue`）+ 车道看护 | Phase 1 保留原路径（看护风险高）；Phase 1.5 再抽“发车 + 判定” |
+| 肉鸽 / 卫戍常驻车道 | `internal/runner/rogue.go`（`residentLoop`） | MAA resident executor（Kind=`rogue`）+ 车道看护 | Phase 1.5 已接入 `ResidentExecutor`：发车/判定走执行器，看护/轮换/暂停仍在车道 |
 | 设备生命周期 | `internal/runner/device.go` | 执行面共用基础设施 | 不抽 executor |
 | 资源闸门 | `internal/runner/resources.go` | 控制面 / 执行面边界 | 保持机端判断 |
 | 任务台账 / 热改 | `internal/runner/queue.go` | 控制面 | 保持现有 `queue.in` |
@@ -113,13 +113,13 @@ func (r *Registry) For(kind string) (Executor, bool)
 queue -> runner slot -> DeviceUp -> executor.Run -> Result -> 判定/记录 -> DeviceDown -> report
 ```
 
-常驻型（肉鸽 / 卫戍）仍由车道循环驱动：
+常驻型（肉鸽 / 卫戍 / 生息）由车道循环驱动：
 
 ```
-residentLoop -> executor.Run（长跑）-> 看护判据 -> 重来 / 切换任务
+residentLoop -> ResidentExecutor.Start（拿可 kill 句柄）-> 看护 -> 自然退出后 Judge
 ```
 
-Phase 1 不改变看护判据（进程退出 / `asst.log` 5 分钟不更新 / 设备连不起）。
+看护判据（进程退出 / `asst.log` 5 分钟不更新 / 设备连不起）和轮换/暂停仍在车道；executor 只负责发车与判定。
 
 ---
 
@@ -228,6 +228,13 @@ Phase 1 不改变看护判据（进程退出 / `asst.log` 5 分钟不更新 / �
 - 未知 Kind 直接判失败（不重试、不动设备）；
 - 验收：现有测试全绿；daily / ann canary 结果与改造前一致；rogue 车道行为不变。
 
+### Phase 1.5：常驻车道接入 executor（已完成 2026-10-26）
+
+- 新增 `ResidentExecutor` 扩展：`Start(job) (*maaRun, error)` + `Judge(outFile)`；
+- `residentLoop` 优先从 `"rogue"` 注册项取执行器；未注册时回退 `startMaa` / `judgeOutFile`；
+- 看护、轮换、暂停、日常插队仍由 `residentLoop` 负责，executor 只负责发车和判定；
+- 验收：`go test ./internal/runner` 全绿；live canary 按 `CANARY-RECLAMATION-ROTATION.md`。
+
 ### Phase 2：PI 纵向切片
 
 - 建 `pi/demo/`：`interface.json` + `Nav.ToHome` + 一个业务任务；
@@ -265,3 +272,4 @@ Phase 1 不改变看护判据（进程退出 / `asst.log` 5 分钟不更新 / �
 | 2026-10-25 | GUI | MXU 只做开发 / 调试，不进生产链路 |
 | 2026-10-25 | 标准 | PI V2 + Pipeline v5.x + schema；核心不用客户端扩展 |
 | 2026-10-25 | 新类型上线 | 注册项 + resource + L1 canary，禁止跳级 |
+| 2026-10-26 | 常驻执行器 | `ResidentExecutor.Start/Judge`；看护/轮换/暂停留在车道 |

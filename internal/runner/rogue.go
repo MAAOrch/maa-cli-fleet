@@ -372,6 +372,7 @@ func (r *Runner) runResidentPre(a model.Account, port string) error {
 // residentLoop 一台机的常驻任务循环。
 func (r *Runner) residentLoop(l *rogueLane) {
 	a := l.acc
+	ex, _ := r.ensureExecutors().For("rogue")
 	log.Printf("[%s:%s] 常驻任务启动（任务 %s，实例 %s）", l.labelText(), a.ID, l.taskName(), a.Emu)
 	fails := 0
 	blankFails := 0 // 连续「无任务摘要」退出次数（黑屏/坏画面）
@@ -444,7 +445,7 @@ func (r *Runner) residentLoop(l *rogueLane) {
 			}
 
 			task = l.taskName() // 设备准备期间可能被热切换
-			run, err := r.startMaa(a, port, task)
+			run, err := r.startResident(ex, a, port, task)
 			if err != nil {
 				l.setNote("发车失败：" + err.Error())
 				log.Printf("[%s:%s] 发车失败：%v", l.labelText(), a.ID, err)
@@ -565,7 +566,7 @@ func (r *Runner) residentLoop(l *rogueLane) {
 			}
 			// 自然退出 → 判 out（成功/失败）；被杀 → 只记原因
 			if reason == "任务退出" {
-				ok, why := r.judgeOutFile(run.out)
+				ok, why := r.judgeResident(ex, run.out)
 				label := l.labelText()
 				l.setNote(label + map[bool]string{true: "完成", false: "失败"}[ok] + why)
 				r.setLoopResult(a.ID, map[bool]string{true: "ok", false: "fail"}[ok]+why)
