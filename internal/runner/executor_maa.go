@@ -39,6 +39,11 @@ func (r *Runner) ensureExecutors() *Registry {
 				_ = r.executors.Register(kind, maa)
 			}
 		}
+		if r.cfg.PiExe != "" {
+			if _, ok := r.executors.For("pi.demo"); !ok {
+				_ = r.executors.Register("pi.demo", newPiExecutor(r.cfg.PiExe, r.cfg.LogDir))
+			}
+		}
 	})
 	return r.executors
 }

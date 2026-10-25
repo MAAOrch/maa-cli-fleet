@@ -1,0 +1,7 @@
+{
+  "NavToHome": {
+    "recognition": "DirectHit",
+    "action": "DoNothing",
+    "next": []
+  }
+}

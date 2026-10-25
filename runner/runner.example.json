@@ -5,6 +5,7 @@
   "mumuManager": "C:/Program Files/Netease/MuMuPlayer-12.0/nx_main/MuMuManager.exe",
   "adbExe": "C:/Program Files/Netease/MuMuPlayer-12.0/shell/adb.exe",
   "maaExe": "bin/maa.exe",
+  "piExe": "",
   "configDir": "config",
   "stateRoot": "data",
   "cacheDir": "data/cache",

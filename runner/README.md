@@ -13,6 +13,9 @@
 | `heartbeat.txt` | 主循环心跳（看门狗用） |
 | `hb_rogue_*.txt` | 各肉鸽车道心跳 |
 | `runner.log` / `*.out` | 运行日志与 maa 输出 |
+| `piExe`（runner.json 字段） | 可选；MaaPiCli.exe 路径，所在目录须含 `interface.json` + `config/maa_pi_config.json` |
+
+PI 项目示例见 [`../pi/demo/README.md`](../pi/demo/README.md)。
 
 ## 首次配置
 

@@ -29,6 +29,7 @@ type Config struct {
 	MumuManager     string   `json:"mumuManager"`
 	AdbExe          string   `json:"adbExe"`
 	MaaExe          string   `json:"maaExe"`
+	PiExe           string   `json:"piExe,omitempty"` // MaaPiCli.exe；所在目录必须含 interface.json + config/maa_pi_config.json
 	ConfigDir       string   `json:"configDir"`
 	DataRoot        string   `json:"stateRoot"`
 	CacheDir        string   `json:"cacheDir"`
@@ -113,6 +114,11 @@ func New(cfgPath string) (*Runner, error) {
 	maa := &maaExecutor{run: r.execMaa}
 	for _, kind := range []string{"daily", "ann"} {
 		if err := r.executors.Register(kind, maa); err != nil {
+			return nil, err
+		}
+	}
+	if cfg.PiExe != "" {
+		if err := r.executors.Register("pi.demo", newPiExecutor(cfg.PiExe, cfg.LogDir)); err != nil {
 			return nil, err
 		}
 	}

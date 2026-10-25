@@ -1,6 +1,6 @@
 # 执行面分层：控制面 / Executor / Resource / 人机面
 
-> 2026-10-25 · 状态：**PARTIALLY IMPLEMENTED（Phase 1 已落地：daily/ann 走 Executor；rogue 车道保留原路径）** · 本文只写边界与契约，不含代码改动
+> 2026-10-25 · 状态：**PARTIALLY IMPLEMENTED（Phase 1：daily/ann 走 Executor；Phase 2 scaffold：pi.demo 经 MaaPiCli -d；Phase 1.5 常驻 executor 在独立分支）** · 本文只写边界与契约，不含代码改动
 > 缘起：fleet 要从 MAA 单一执行线延展到 MaaFramework / PI 资源；先把“谁执行、执行什么、怎么加新类型”定死，避免调度器里继续长 `switch`。
 > 关联：`ARCHITECTURE-NODE-SELF.md`（机端自管铁律）、`RUNNER-UNIFIED-TASKS.md`（三类任务）、`RELEASE-STANDARD.md`（上线门槛）、`NODE-BOUNDARY-CONVERGENCE.md`（策略/执行边界）。
 
@@ -228,7 +228,14 @@ Phase 1 不改变看护判据（进程退出 / `asst.log` 5 分钟不更新 / �
 - 未知 Kind 直接判失败（不重试、不动设备）；
 - 验收：现有测试全绿；daily / ann canary 结果与改造前一致；rogue 车道行为不变。
 
-### Phase 2：PI 纵向切片
+### Phase 2：PI 纵向切片（SCAFFOLD IMPLEMENTED 2026-10-26）
+
+- `pi/demo` + `MaaPiCLIExecutor` 已落地：`MaaPiCli -d`，exe 目录 = 项目根；
+- `piExe` 配置后注册 `pi.demo`；退出码/日志进 `Result`；
+- 真机 canary、动态 `pi.<project>.<entry>`、按 job 生成配置仍待做；
+- 详见 `PHASE2-PI-SLICE.md`。
+
+<!-- 原 Phase 2 计划保留在下方，作为后续切片清单。 -->
 
 - 建 `pi/demo/`：`interface.json` + `Nav.ToHome` + 一个业务任务；
 - 新增 `MaaPiCLIExecutor`，用 `MaaPiCli -d` 跑（参数以 `--help` 为准）；
@@ -265,3 +272,4 @@ Phase 1 不改变看护判据（进程退出 / `asst.log` 5 分钟不更新 / �
 | 2026-10-25 | GUI | MXU 只做开发 / 调试，不进生产链路 |
 | 2026-10-25 | 标准 | PI V2 + Pipeline v5.x + schema；核心不用客户端扩展 |
 | 2026-10-25 | 新类型上线 | 注册项 + resource + L1 canary，禁止跳级 |
+| 2026-10-26 | PI 执行器 | `MaaPiCli -d`；exe 目录 = 项目根；先固定 `pi.demo` |

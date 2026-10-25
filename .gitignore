@@ -8,6 +8,14 @@
 core/*
 !core/README.md
 
+# ── PI / MaaPiCli 运行时 ─────────────────────────────────
+/pi/*/MaaPiCli.exe
+/pi/*/*.dll
+/pi/*/*.node
+/pi/*/config/maa_pi_config.json
+/pi/*/MaaAgentBinary/
+/pi/*/logs/
+
 # ── 机端运行态（含账号名 / 手机号 / 截图，绝不入库）──────
 /data/
 /runner/*

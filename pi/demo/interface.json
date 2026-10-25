@@ -1,0 +1,35 @@
+{
+  "interface_version": 2,
+  "name": "fleet-demo",
+  "label": "Fleet Demo",
+  "title": "Fleet Demo",
+  "version": "0.1.0",
+  "description": "MaaPiCli smoke-test project for fleet Phase 2.",
+  "license": "MIT",
+  "controller": [
+    {
+      "name": "Android",
+      "label": "Android (ADB)",
+      "type": "Adb",
+      "display_short_side": 720
+    }
+  ],
+  "resource": [
+    {
+      "name": "Demo",
+      "label": "Demo",
+      "path": [
+        "resource"
+      ]
+    }
+  ],
+  "task": [
+    {
+      "name": "Nav.ToHome",
+      "label": "Navigation smoke test",
+      "entry": "NavToHome",
+      "default_check": true,
+      "description": "DirectHit + DoNothing smoke test. Replace with real navigation after the wiring is verified."
+    }
+  ]
+}

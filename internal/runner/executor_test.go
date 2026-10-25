@@ -115,17 +115,36 @@ func TestMaaExecutorHonorsCanceledContext(t *testing.T) {
 	}
 }
 
+func TestNewRegistersPiDemo(t *testing.T) {
+	exe := filepath.Join(t.TempDir(), "MaaPiCli.exe")
+	r, err := New(newRunnerFixture(t, exe))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	ex, ok := r.executors.For("pi.demo")
+	if !ok {
+		t.Fatal("pi.demo should be registered when piExe is set")
+	}
+	if ex.Name() != "maa-pi-cli" {
+		t.Fatalf("pi.demo executor = %q, want maa-pi-cli", ex.Name())
+	}
+}
+
 // newRunnerFixture 写最小的 runner.json/accounts.json/state.json，供 New() 回归用。
-func newRunnerFixture(t *testing.T) string {
+func newRunnerFixture(t *testing.T, piExe ...string) string {
 	t.Helper()
 	dir := t.TempDir()
 	accounts := `{"slots":1,"accounts":[{"id":"a01","name":"t","client":"Official",` +
 		`"stage":"1-7","fallback":"1-7","emu":"1","daily":"daily_a01","enabled":true}]}`
 	state := `{"tasks":{}}`
+	pi := ""
+	if len(piExe) > 0 && piExe[0] != "" {
+		pi = `,"piExe":"` + filepath.ToSlash(piExe[0]) + `"`
+	}
 	cfg := `{"slots":1,"maxConcurrent":1,"maaExe":"x","configDir":"` + filepath.ToSlash(dir) +
 		`","stateRoot":"` + filepath.ToSlash(dir) + `","stateFile":"` +
 		filepath.ToSlash(filepath.Join(dir, "state.json")) + `","accountsFile":"` +
-		filepath.ToSlash(filepath.Join(dir, "accounts.json")) + `"}`
+		filepath.ToSlash(filepath.Join(dir, "accounts.json")) + `"` + pi + `}`
 	for name, body := range map[string]string{
 		"accounts.json": accounts,
 		"state.json":    state,
