@@ -38,6 +38,9 @@ const rogueSpinMin = 8  // 同一 cur_task 连续多久算空转。2026-10-05 �
 const spaSpinMin = 20   // 卫戍协议一局自动作战可能很久，同一 cur_task 的容忍时间放宽
 const rotateReason = "轮换到下一个任务"
 
+// residentPreTimeout 是常驻前置命令的超时；测试里可缩短，生产固定 15 分钟。
+var residentPreTimeout = 15 * time.Minute
+
 type rogueLane struct {
 	acc model.Account
 
@@ -162,6 +165,20 @@ func (r *Runner) startResidents() {
 	}
 }
 
+// rotationStart 选择轮换起点：当前任务在列表里就从它开始，否则从第一个开始。
+// 这样只配 residentTasks、或热切换到一个不在列表里的任务时，首轮不会跑空。
+func rotationStart(tasks []string, current string) (int, string) {
+	if len(tasks) == 0 {
+		return 0, current
+	}
+	for i, t := range tasks {
+		if t == current {
+			return i, t
+		}
+	}
+	return 0, tasks[0]
+}
+
 // startLane 启动一条常驻车道（幂等：同一账号已有车道时原样返回）。
 func (r *Runner) startLane(a model.Account, task string) *rogueLane {
 	r.mu.Lock()
@@ -170,12 +187,8 @@ func (r *Runner) startLane(a model.Account, task string) *rogueLane {
 		return l
 	}
 	l := &rogueLane{acc: a, task: task, label: residentLabel(task), note: "常驻", tasks: a.RotationTasks(), rotateMin: a.ResidentRotateMinutes, taskSince: time.Now()}
-	for i, t := range l.tasks {
-		if t == task {
-			l.taskIdx = i
-			break
-		}
-	}
+	l.taskIdx, l.task = rotationStart(l.tasks, task)
+	l.label = residentLabel(l.task)
 	r.lanes[a.ID] = l
 	r.mu.Unlock()
 	r.upsertRogueTask(a, task, "running", "常驻")
@@ -304,10 +317,45 @@ func (r *Runner) runResidentPre(a model.Account, port string) error {
 		return nil
 	}
 	cmdline := strings.ReplaceAll(tpl, "{addr}", "127.0.0.1:"+port)
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), residentPreTimeout)
 	defer cancel()
 	log.Printf("[常驻:%s] 前置命令：%s", a.ID, cmdline)
-	out, err := exec.CommandContext(ctx, "cmd", "/c", cmdline).CombinedOutput()
+
+	// 写临时 .cmd 再执行：把整条命令直接作为 cmd /c 参数会被二次转义，
+	// 生产里的删档脚本常带引号、重定向和 &&，必须走批处理文件。
+	script, err := os.CreateTemp("", "fleet-resident-pre-*.cmd")
+	if err != nil {
+		return fmt.Errorf("创建前置命令临时文件失败：%w", err)
+	}
+	name := script.Name()
+	defer os.Remove(name)
+	if _, err := script.WriteString("@echo off\r\n" + cmdline + "\r\n"); err != nil {
+		_ = script.Close()
+		return fmt.Errorf("写入前置命令失败：%w", err)
+	}
+	if err := script.Close(); err != nil {
+		return fmt.Errorf("关闭前置命令临时文件失败：%w", err)
+	}
+
+	cmd := exec.Command("cmd.exe", "/d", "/c", name)
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("启动前置命令失败：%w", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err = <-done:
+	case <-ctx.Done():
+		// 只杀 cmd.exe 不够：子进程还握着 stdout，Wait 会一直阻塞到它退出。
+		// 用 taskkill /T 杀整棵进程树，保证超时真的生效。
+		_ = exec.Command("taskkill", "/T", "/F", "/PID", strconv.Itoa(cmd.Process.Pid)).Run()
+		<-done
+		err = ctx.Err()
+	}
+	out := buf.Bytes()
 	text := strings.TrimSpace(string(out))
 	if text != "" {
 		if len(text) > 600 {

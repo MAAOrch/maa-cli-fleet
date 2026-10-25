@@ -15,6 +15,7 @@ func TestAccountResidentTaskFile(t *testing.T) {
 	}{
 		{"new field wins", model.Account{ResidentTask: "spa_a32", RogueTask: "rogue_old"}, "spa_a32"},
 		{"legacy field fallback", model.Account{RogueTask: "rogue_old"}, "rogue_old"},
+		{"rotation first", model.Account{ResidentTasks: []string{" ", "ra_cycle_lx", "rogue_jiegarden_lx"}}, "ra_cycle_lx"},
 		{"trim", model.Account{ResidentTask: "  spa_a32  "}, "spa_a32"},
 		{"empty", model.Account{}, ""},
 	}

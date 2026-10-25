@@ -99,12 +99,21 @@ func (a Account) RotationTasks() []string {
 	return out
 }
 
-// ResidentTaskFile 返回常驻任务文件名：新字段优先，旧的 rogueTask 兜底。
+// ResidentTaskFile 返回常驻任务文件名：新字段优先，旧的 rogueTask 兜底；
+// 只配了轮换列表时取第一个非空任务，保证常驻判定与首轮发车都有任务可跑。
 func (a Account) ResidentTaskFile() string {
 	if s := strings.TrimSpace(a.ResidentTask); s != "" {
 		return s
 	}
-	return strings.TrimSpace(a.RogueTask)
+	if s := strings.TrimSpace(a.RogueTask); s != "" {
+		return s
+	}
+	for _, t := range a.ResidentTasks {
+		if s := strings.TrimSpace(t); s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 // AccountsFile 是 accounts.json 的顶层。
