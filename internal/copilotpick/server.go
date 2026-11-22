@@ -31,6 +31,7 @@ func NewHandler(m *Manager) http.Handler {
 	h := &handler{m: m}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", h.health)
+	mux.HandleFunc("GET /api/pi/projects", h.piProjects)
 	mux.HandleFunc("GET /api/accounts", h.accounts)
 	mux.HandleFunc("POST /api/box", h.box)
 	mux.HandleFunc("POST /api/box/maa", h.boxFromMaa)
@@ -590,4 +591,43 @@ func (h *handler) navRestart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "detail": msg})
+}
+
+func (h *Handler) piProjects(w http.ResponseWriter, r *http.Request) {
+	// 简单返回可用 PI 项目（读工作区 pi/ 目录）
+	type proj struct {
+		Name    string   `json:"name"`
+		Entries []string `json:"entries"`
+	}
+	var out []proj
+	entries, err := os.ReadDir("pi")
+	if err != nil {
+		h.writeJSON(w, []proj{})
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join("pi", e.Name(), "interface.json"))
+		if err != nil {
+			continue
+		}
+		var iface struct {
+			Task []struct {
+				Name string `json:"name"`
+			} `json:"task"`
+		}
+		if json.Unmarshal(b, &iface) != nil {
+			continue
+		}
+		var tasks []string
+		for _, t := range iface.Task {
+			if t.Name != "" {
+				tasks = append(tasks, t.Name)
+			}
+		}
+		out = append(out, proj{Name: e.Name(), Entries: tasks})
+	}
+	h.writeJSON(w, out)
 }
