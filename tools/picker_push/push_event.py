@@ -229,6 +229,10 @@ def go_area(cfg: dict, area: str, log=print, via_fleet=False, fleet_state_dir=""
     run_task("收结算页", timeout=180, log=log)
     ok, out = run_task(task, timeout=300, log=log)
     if not ok:
+        log("    [pi] 进图失败，尝试滑动扫描")
+        # 滑动兜底：如果已在某个活动图，左右滑找目标
+        if swipe_find_stage(cfg, "OS-1", log=log):
+            return
         raise NavFailed(f"PI 任务「{task}」失败：" + out.strip().splitlines()[-1][:200])
 
 
