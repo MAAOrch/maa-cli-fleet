@@ -9,7 +9,8 @@ param(
     [string]$AdbName = "1-MuMuPlayer v5+",
     [string]$AdbPath = "D:/Xiach/MuMuPlayer/nx_main/adb.exe",
     [string]$Address = "127.0.0.1:16384",
-    [string]$TaskName = "收结算页"
+    [string]$TaskName = "收结算页",
+    [string]$Event = "act46side"
 )
 $ErrorActionPreference = "Stop"
 
@@ -51,8 +52,24 @@ if (Test-Path $MaaModelDir) {
     Write-Warning "没找到 OCR 模型目录 $MaaModelDir；OCR 识别会失败（只剩 TemplateMatch）"
 }
 
-# 4) interface.json + 默认 config
-Copy-Item (Join-Path $PSScriptRoot "interface.json") (Join-Path $Out "interface.json") -Force
+# 4) interface.json：先把活动层路径切到 -Event，再复制到运行根
+if ($Event -notmatch '^[A-Za-z0-9_.-]+$') {
+    throw "-Event 不合法：$Event（只允许字母/数字/下划线/点/连字符）"
+}
+$eventLayer = Join-Path $PSScriptRoot "resource\events\$Event"
+if (-not (Test-Path (Join-Path $eventLayer "pipeline\event_override.json"))) {
+    throw "找不到活动层 $eventLayer\pipeline\event_override.json；先运行 python pi\arknights-event\tools\gen_event_override.py --event $Event --prefix XX --s-count 5"
+}
+$interfacePath = Join-Path $PSScriptRoot "interface.json"
+$itf = Get-Content -LiteralPath $interfacePath -Raw -Encoding UTF8 | ConvertFrom-Json
+if (-not $itf.resource -or $itf.resource.Count -lt 1) {
+    throw "interface.json 缺 resource[0]，无法设置活动层"
+}
+$itf.resource[0].path = @("resource", "resource/common", "resource/events/$Event")
+$itfJson = $itf | ConvertTo-Json -Depth 20
+[System.IO.File]::WriteAllText($interfacePath, $itfJson + "`n", [System.Text.UTF8Encoding]::new($false))
+Write-Host "interface.json 活动层: resource/events/$Event"
+Copy-Item $interfacePath (Join-Path $Out "interface.json") -Force
 $config = @{
     controller = @{ name = "Android" }
     adb        = @{ name = $AdbName; adb_path = $AdbPath; address = $Address }

@@ -1,0 +1,830 @@
+{
+    "NavEXStart": {
+        "doc": "入口：任意界面 → EX 图。优先认「已在 EX 图」，否则按 详情页→地图tab→hub入口→终端卡→主界面 的顺序找回路径。",
+        "recognition": {
+            "type": "DirectHit",
+            "param": {}
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        },
+        "timeout": 240000,
+        "next": [
+            "NavRefillDialog",
+            "NavNetworkRetry",
+            "[JumpBack]NavStorySkip",
+            "NavArrivedEX",
+            "NavDetailBackEX",
+            "NavTabEX",
+            "NavHubEX",
+            "NavTerminalCardEX",
+            "NavHomeToTerminalEX",
+            "NavHome",
+            "NavCloseDialog"
+        ]
+    },
+    "NavSStart": {
+        "doc": "入口：任意界面 → S 图。",
+        "recognition": {
+            "type": "DirectHit",
+            "param": {}
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        },
+        "timeout": 240000,
+        "next": [
+            "NavRefillDialog",
+            "NavNetworkRetry",
+            "[JumpBack]NavStorySkip",
+            "NavArrivedS",
+            "NavDetailBackS",
+            "NavTabS",
+            "NavHubS",
+            "NavTerminalCardS",
+            "NavHomeToTerminalS",
+            "NavHome",
+            "NavCloseDialog"
+        ]
+    },
+    "NavMainStart": {
+        "doc": "入口：任意界面 → 普通图。",
+        "recognition": {
+            "type": "DirectHit",
+            "param": {}
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        },
+        "timeout": 240000,
+        "next": [
+            "NavRefillDialog",
+            "NavNetworkRetry",
+            "[JumpBack]NavStorySkip",
+            "NavArrivedMain",
+            "NavDetailBackMain",
+            "NavTabMain",
+            "NavHubMain",
+            "NavTerminalCardMain",
+            "NavHomeToTerminalMain",
+            "NavHome",
+            "NavCloseDialog"
+        ]
+    },
+    "NavCollectStart": {
+        "doc": "入口：收结算页 / 从任意页面回主界面。",
+        "recognition": {
+            "type": "DirectHit",
+            "param": {}
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        },
+        "timeout": 180000,
+        "next": [
+            "NavRefillDialog",
+            "NavNetworkRetry",
+            "[JumpBack]NavStorySkip",
+            "NavSaveDialog",
+            "NavResultEnd",
+            "NavResultFail",
+            "NavDetailAny",
+            "NavMapAnyBack",
+            "NavHubAnyBack",
+            "NavTerminalAnyBack",
+            "NavHome",
+            "NavCloseDialog"
+        ]
+    },
+    "NavCollectMapStart": {
+        "doc": "入口：收结算页/失败页，停在活动图（不回主界面）。",
+        "recognition": {
+            "type": "DirectHit",
+            "param": {}
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        },
+        "timeout": 120000,
+        "next": [
+            "NavRefillDialog",
+            "NavNetworkRetry",
+            "[JumpBack]NavStorySkip",
+            "NavSaveDialogMap",
+            "NavResultEndMap",
+            "NavResultFailMap",
+            "NavDetailToMap",
+            "NavMapStop",
+            "NavCloseDialog"
+        ]
+    },
+    "NavHome": {
+        "doc": "主界面（终端按钮）= 终点",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "EventNav/home_terminal.png",
+                "roi": [860, 100, 300, 150],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        }
+    },
+    "NavHomeToTerminalEX": {
+        "doc": "主界面点「终端」（ROI 与落点统一对齐 S 图已验证值，避免误匹配干员瓦片进干员页）",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "EventNav/home_terminal.png",
+                "roi": [860, 100, 300, 150],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [960, 160, 1, 1]
+            }
+        },
+        "post_delay": 2500,
+        "next": [
+            "NavTerminalCardEX"
+        ]
+    },
+    "NavHomeToTerminalS": {
+        "doc": "主界面点「终端」（显式点标签中心；旧模板会误匹配到干员瓦片导致进干员页）",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "EventNav/home_terminal.png",
+                "roi": [860, 100, 300, 150],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [960, 160, 1, 1]
+            }
+        },
+        "post_delay": 2500,
+        "next": [
+            "NavTerminalCardS"
+        ]
+    },
+    "NavHomeToTerminalMain": {
+        "doc": "主界面点「终端」（ROI 与落点统一对齐 S 图已验证值，避免误匹配干员瓦片进干员页）",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "EventNav/home_terminal.png",
+                "roi": [860, 100, 300, 150],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [960, 160, 1, 1]
+            }
+        },
+        "post_delay": 2500,
+        "next": [
+            "NavTerminalCardMain"
+        ]
+    },
+    "NavTerminalAnyBack": {
+        "doc": "终端页（任意活动）→ 左上返回主界面",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "EventNav/terminal_event_card.png",
+                "roi": [0, 320, 400, 200],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [45, 42, 1, 1]
+            }
+        },
+        "post_delay": 1800,
+        "next": [
+            "NavHome"
+        ]
+    },
+    "NavHubAnyBack": {
+        "doc": "活动 hub（任意活动）→ 左上返回终端页",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "EventNav/hub_main.png",
+                    "EventNav/hub_ex.png",
+                    "EventNav/hub_s.png"
+                ],
+                "roi": [820, 420, 460, 200],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [45, 42, 1, 1]
+            }
+        },
+        "post_delay": 2000,
+        "next": [
+            "NavTerminalAnyBack"
+        ]
+    },
+    "NavDetailBackEX": {
+        "doc": "EX 关卡详情页 → 左上返回（回 EX 图或地图 tab）",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "EventNav/detail_startbtn.png",
+                    "EventNav/detail_startbtn_raid.png"
+                ],
+                "roi": [1040, 600, 240, 120],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [45, 42, 1, 1]
+            }
+        },
+        "post_delay": 1800,
+        "next": [
+            "NavArrivedEX",
+            "NavTabEX",
+            "NavCloseDialog"
+        ]
+    },
+    "NavDetailBackS": {
+        "doc": "S 关卡详情页 → 左上返回（回 S 图或地图 tab）",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "EventNav/detail_startbtn.png",
+                    "EventNav/detail_startbtn_raid.png"
+                ],
+                "roi": [1040, 600, 240, 120],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [45, 42, 1, 1]
+            }
+        },
+        "post_delay": 1800,
+        "next": [
+            "NavArrivedS",
+            "NavTabS",
+            "NavCloseDialog"
+        ]
+    },
+    "NavDetailBackMain": {
+        "doc": "普通图关卡详情页 → 左上返回（回普通图或地图 tab）",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "EventNav/detail_startbtn.png",
+                    "EventNav/detail_startbtn_raid.png"
+                ],
+                "roi": [1040, 600, 240, 120],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [45, 42, 1, 1]
+            }
+        },
+        "post_delay": 1800,
+        "next": [
+            "NavArrivedMain",
+            "NavTabMain",
+            "NavCloseDialog"
+        ]
+    },
+    "NavDetailAny": {
+        "doc": "任意关卡详情页 → 左上返回活动图",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "EventNav/detail_startbtn.png",
+                    "EventNav/detail_startbtn_raid.png"
+                ],
+                "roi": [1040, 600, 240, 120],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [45, 42, 1, 1]
+            }
+        },
+        "post_delay": 1800,
+        "next": [
+            "NavMapAnyBack",
+            "NavCloseDialog"
+        ]
+    },
+    "NavDetailToMap": {
+        "doc": "任意关卡详情页 → 退回活动图",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "EventNav/detail_startbtn.png",
+                    "EventNav/detail_startbtn_raid.png"
+                ],
+                "roi": [1040, 600, 240, 120],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [45, 42, 1, 1]
+            }
+        },
+        "post_delay": 1800,
+        "next": [
+            "NavMapStop"
+        ]
+    },
+    "NavSaveDialog": {
+        "doc": "「是否将此阵容保存为代理指挥阵容?」→ 点 ✔",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "EventNav/save_dialog.png",
+                "roi": [820, 160, 460, 160],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [1170, 262, 1, 1]
+            }
+        },
+        "post_delay": 1500,
+        "next": [
+            "NavResultEnd"
+        ]
+    },
+    "NavResultEnd": {
+        "doc": "结算页（行动结束）：提示「点击画面以继续」→ 点中下方",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "EventNav/result_end.png",
+                "roi": [20, 110, 460, 240],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [640, 660, 1, 1]
+            }
+        },
+        "post_delay": 2500,
+        "next": [
+            "NavAfterResult"
+        ]
+    },
+    "NavAfterResult": {
+        "doc": "结算收完后通常回关卡图/详情页；交给返回链",
+        "recognition": {
+            "type": "DirectHit",
+            "param": {}
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        },
+        "next": [
+            "NavHome",
+            "NavMapAnyBack",
+            "NavDetailAny"
+        ]
+    },
+    "NavResultFail": {
+        "doc": "任务失败页（0 星）→ 点画面继续",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "EventNav/result_fail.png",
+                "roi": [40, 200, 500, 320],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [640, 360, 1, 1]
+            }
+        },
+        "post_delay": 2800,
+        "next": [
+            "NavResultEnd"
+        ]
+    },
+    "NavSaveDialogMap": {
+        "doc": "保存阵容弹窗（地图链）：点 ✔ 后继续收行动结束页",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "EventNav/save_dialog.png",
+                "roi": [820, 160, 460, 160],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [1170, 262, 1, 1]
+            }
+        },
+        "post_delay": 1500,
+        "next": [
+            "NavResultEndMap"
+        ]
+    },
+    "NavResultEndMap": {
+        "doc": "结算页（行动结束）：提示「点击画面以继续」→ 点中下方",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "EventNav/result_end.png",
+                "roi": [20, 110, 460, 240],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [640, 660, 1, 1]
+            }
+        },
+        "post_delay": 2500,
+        "next": [
+            "NavDetailToMap",
+            "NavMapStop"
+        ]
+    },
+    "NavResultFailMap": {
+        "doc": "任务失败页（0 星，地图链）→ 点画面继续",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "EventNav/result_fail.png",
+                "roi": [40, 200, 500, 320],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [640, 360, 1, 1]
+            }
+        },
+        "post_delay": 2800,
+        "next": [
+            "NavResultEndMap"
+        ]
+    },
+    "NavRaidToggle": {
+        "doc": "详情页上的突袭模式按钮（未解锁时是灰的/带锁，点了不变）",
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "突袭模式"
+                ],
+                "roi": [580, 595, 260, 120],
+                "threshold": 0.3
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "post_delay": 2000,
+        "next": [
+            "NavRaidConfirm"
+        ]
+    },
+    "NavRaidConfirm": {
+        "doc": "切突袭成功：按钮变成「开始突袭」",
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "开始突袭"
+                ],
+                "roi": [1040, 600, 240, 120],
+                "threshold": 0.3
+            }
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        }
+    },
+    "NavRaidStart": {
+        "doc": "入口：把当前关卡的难度切到突袭",
+        "recognition": {
+            "type": "DirectHit",
+            "param": {}
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        },
+        "timeout": 60000,
+        "next": [
+            "NavRaidConfirm",
+            "NavRaidToggle",
+            "NavCloseDialog"
+        ]
+    },
+    "NavRefillDialog": {
+        "doc": "理智不足弹层（点开始行动时弹出）：点 X 关掉，不自动嗑药",
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "使用药剂恢复",
+                    "清空选择"
+                ],
+                "roi": [650, 280, 620, 430],
+                "threshold": 0.3
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [833, 668, 1, 1]
+            }
+        },
+        "post_delay": 1500,
+        "next": []
+    },
+    "NavRefillPotionTab": {
+        "doc": "理智补充弹层的「使用药剂恢复」页签（确认是在用药剂，不是源石）",
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "使用药剂恢复"
+                ],
+                "roi": [640, 280, 260, 70],
+                "threshold": 0.3
+            }
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        },
+        "next": [
+            "NavRefillConfirm"
+        ]
+    },
+    "NavRefillConfirm": {
+        "doc": "防碎石双保险：确认句里必须出现理智药关键词（合剂/应急理智/顶液/浓缩液/小样）才点 ✓；选中的若是至纯源石则这些词都不会出现 → 不点、任务失败 → 驱动停手",
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "理智合剂",
+                    "应急理智",
+                    "理智顶液",
+                    "理智浓缩液",
+                    "理智小样",
+                    "理智药剂"
+                ],
+                "roi": [720, 575, 560, 95],
+                "threshold": 0.3
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [1069, 668, 1, 1]
+            }
+        },
+        "post_delay": 3000,
+        "next": []
+    },
+    "NavRefillUseStart": {
+        "doc": "入口：理智不足弹层已弹出时，用药剂补理智（默认流程不调用；驱动 --max-potions>0 才用）",
+        "recognition": {
+            "type": "DirectHit",
+            "param": {}
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        },
+        "timeout": 20000,
+        "next": [
+            "NavRefillConfirm",
+            "NavRefillPotionTab",
+            "NavHomeOpenRefill"
+        ]
+    },
+    "NavHomeOpenRefill": {
+        "doc": "主界面点理智「+」打开补充理智弹层（补理智任务在弹层没打开时先走这条）",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "EventNav/home_terminal.png"
+                ],
+                "roi": [860, 100, 300, 150],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [752, 183, 1, 1]
+            }
+        },
+        "post_delay": 1800,
+        "next": [
+            "NavRefillConfirm"
+        ]
+    },
+    "NavNetworkRetry": {
+        "doc": "网络掉线/重连确认：点按钮",
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "重新连接",
+                    "重试"
+                ],
+                "roi": [380, 230, 520, 260],
+                "threshold": 0.3
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "post_delay": 3000,
+        "next": []
+    },
+    "NavCloseDialog": {
+        "doc": "兜底：只点无害的「关闭/取消/知道了」（绝不匹配 确定/确认，防误点碎石/放弃进度）",
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "关闭",
+                    "取消",
+                    "知道了"
+                ],
+                "roi": [200, 260, 880, 300],
+                "threshold": 0.3
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "post_delay": 2000,
+        "next": []
+    },
+    "NavDrillStart": {
+        "doc": "关卡详情页点「演习」→ 编队页（演习模式；供 Plan B 免费试错）",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "EventNav/detail_startbtn.png",
+                    "EventNav/detail_startbtn_raid.png"
+                ],
+                "roi": [1035, 600, 245, 115],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [900, 665, 1, 1]
+            }
+        },
+        "post_delay": 2500,
+        "next": [
+            "NavDrillReady"
+        ]
+    },
+    "NavDrillReady": {
+        "doc": "演习/编队页就绪（右上「快捷编队」按钮）",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "EventNav/drill_squad.png"
+                ],
+                "roi": [820, 0, 320, 100],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        }
+    },
+    "NavDrillExit": {
+        "doc": "从演习/编队页返回（左上返回）",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "EventNav/drill_squad.png"
+                ],
+                "roi": [820, 0, 320, 100],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [45, 42, 1, 1]
+            }
+        },
+        "post_delay": 1500
+    },
+    "NavStorySkip": {
+        "doc": "首通剧情右上角 SKIP：OCR 命中后只点它，并只进入两段式确认节点（不直接点全局确认，防误触）",
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "(?i)skip"
+                ],
+                "roi": [1080, 0, 200, 95],
+                "threshold": 0.3
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "post_delay": 800,
+        "next": [
+            "NavStorySkipConfirm"
+        ]
+    },
+    "NavStorySkipConfirm": {
+        "doc": "跳过剧情确认弹窗：必须 OCR 到「跳过」或「剧情」才点屏幕中部黄色确认按钮（坐标 750,500 取自 MaaEnd AutoSkip 的确认按钮 ROI 650,450,200,100 中心）；绝不并入 NavCloseDialog 的宽泛「确定/确认」",
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "跳过",
+                    "剧情"
+                ],
+                "roi": [400, 250, 480, 260],
+                "threshold": 0.3
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [750, 500, 1, 1]
+            }
+        },
+        "post_delay": 2500,
+        "next": [
+            "NavCollectMapStart"
+        ]
+    }
+}
