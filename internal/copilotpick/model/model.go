@@ -73,6 +73,9 @@ type Job struct {
 	Mode            string   `json:"mode,omitempty"`            // ready|borrow|train|blocked
 	ImpliedMissing  int      `json:"impliedMissing,omitempty"`  // 作业未写练度、按星级补默认要求的条目数
 	RequirementFuzz bool     `json:"requirementFuzz,omitempty"` // 名册缺技能数据，技能/模组按已拥有处理
+	LocalScore      float64  `json:"localScore,omitempty"`      // 跨号共享评分库（job_scores.json）综合分
+	LocalPass       int      `json:"localPass,omitempty"`       // 跨号实测 3★/通关次数
+	LocalFail       int      `json:"localFail,omitempty"`       // 跨号实测失败/低星次数
 }
 
 // JobSearch 是一次“搜作业”的结果。

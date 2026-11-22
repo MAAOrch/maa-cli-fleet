@@ -3,7 +3,7 @@
 
 架构（2026-11-22 用户指定，按 MaaFramework ProjectInterface V2 协议）：
 
-    Python（本脚本）       只做决策：读台账/理智、选作业、重试顺序
+    Python（本脚本）       只做决策：读台账/理智、选作业、助战降级、重试顺序、Webhook 推送
     MaaFw PI（pi/arknights-event）  所有 UI 导航：主界面→终端→活动 hub→普通/EX/S 图、
                                     收结算页、任务失败页、保存阵容弹窗
     copilot-picker         执行作业：onMap 模式下由 MaaCore 的 find_stage 在当前活动图上
@@ -17,6 +17,7 @@
   python tools/picker_push/push_event.py --event act46side --from OS-S-1 --to OS-S-5
   python tools/picker_push/push_event.py --event act46side --stages OS-EX-8 --mode normal
   python tools/picker_push/push_event.py --event act46side --stages OS-S-1 --dry-run
+  python tools/picker_push/push_event.py --event act46side --from OS-1 --webhook https://...
 
 退出码：0 = 全部完成 / 1 = 有关卡失败 / 2 = 环境或参数问题。
 """
@@ -28,6 +29,7 @@ import json
 import os
 import sys
 import time
+import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -89,9 +91,46 @@ def save_tried(tried: dict[tuple[str, str], set[int]]) -> None:
         pass
 
 
-def api(cfg: dict):
-    import urllib.request
+def build_webhook_payload(url: str, event: str, title: str, text: str, data: dict | None = None) -> dict:
+    """按常见群机器人 URL 自动适配 JSON 载荷，未知 URL 走通用结构。"""
+    low = url.lower()
+    full_text = f"{title}\n{text}" if text else title
+    if "open.feishu.cn" in low or "open.larksuite.com" in low:
+        return {"msg_type": "text", "content": {"text": full_text}}
+    if "oapi.dingtalk.com" in low or "qyapi.weixin.qq.com" in low:
+        return {"msgtype": "text", "text": {"content": full_text}}
+    if "discord.com/api/webhooks" in low or "discordapp.com/api/webhooks" in low:
+        return {"content": f"**{title}**\n{text}" if text else f"**{title}**"}
+    return {
+        "event": event,
+        "title": title,
+        "text": text,
+        "data": data or {},
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
 
+
+def send_webhook(url: str, event: str, title: str, text: str, data: dict | None = None) -> bool:
+    """轻量 Webhook 推送（纯标准库，失败只打日志，绝不打断推关）。"""
+    if not url:
+        return False
+    payload = build_webhook_payload(url, event, title, text, data)
+    raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=raw,
+        headers={"Content-Type": "application/json; charset=utf-8"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            return 200 <= getattr(resp, "status", 200) < 300
+    except Exception as e:  # noqa: BLE001
+        print(f"   [webhook] 推送失败（不影响推关）：{e}", flush=True)
+        return False
+
+
+def api(cfg: dict):
     def post(path: str, body: dict) -> dict:
         data = json.dumps(body).encode()
         req = urllib.request.Request(
@@ -107,25 +146,49 @@ def api(cfg: dict):
     return post, get
 
 
-def search_jobs(post, code: str, stage_name: str, limit: int, mode: str = "") -> list[dict]:
-    body = {"stageCode": code, "stageName": stage_name, "limit": limit}
+def search_jobs(
+    post, code: str, stage_name: str, limit: int, mode: str = "", allow_borrow: bool = True
+) -> list[dict]:
+    """拉取候选作业：先排 ready（不用助战），再用 borrow（助战降级 supportUnitUsage=1）兜底。"""
+    fetch_limit = max(limit * 3, 12) if allow_borrow else limit
+    body = {"stageCode": code, "stageName": stage_name, "limit": fetch_limit}
     if mode:
-        body["mode"] = mode  # picker 侧按标题筛掉「仅突袭/仅普通」等不对难度的作业
+        body["mode"] = mode  # picker 侧按难度过滤掉不对难度的作业
     out = post("/api/jobs/search", body)
-    return [j for j in out.get("jobs", []) if j.get("mode") == "ready" and j.get("met")]
+    all_jobs = out.get("jobs", [])
+    ready = [j for j in all_jobs if j.get("mode") == "ready" and j.get("met")][:limit]
+    if not allow_borrow:
+        return ready
+    borrow = [j for j in all_jobs if j.get("mode") == "borrow"][:limit]
+    return ready + borrow
 
 
-def start_run(post, cfg: dict, code: str, stage_name: str, job_id: int, mode: str,
-              timeout_min: int, manual: bool = False) -> str:
+def start_run(
+    post,
+    cfg: dict,
+    code: str,
+    stage_name: str,
+    job_id: int,
+    mode: str,
+    timeout_min: int,
+    manual: bool = False,
+    support_unit_usage: int = 0,
+) -> str:
     stage = {"stageCode": code, "stageName": stage_name, "jobIds": [job_id]}
     if mode == "raid":
         stage["raidJobIds"] = [job_id]
     body = {
-        "accountId": cfg["account"], "client": cfg.get("client", ""),
+        "accountId": cfg["account"],
+        "client": cfg.get("client", ""),
         "stages": [stage],
-        "manualMode": manual, "onMap": not manual,
-        "formation": True, "addTrust": True, "ignoreRequirements": True,
-        "maxAttempts": 1, "supportUnitUsage": 0, "timeoutMin": timeout_min,
+        "manualMode": manual,
+        "onMap": not manual,
+        "formation": True,
+        "addTrust": True,
+        "ignoreRequirements": True,
+        "maxAttempts": 1,
+        "supportUnitUsage": int(support_unit_usage),
+        "timeoutMin": timeout_min,
     }
     return post("/api/run/start", body)["runId"]
 
@@ -164,6 +227,13 @@ def go_area(cfg: dict, area: str, log=print) -> None:
         raise NavFailed(f"PI 任务「{task}」失败：" + out.strip().splitlines()[-1][:200])
 
 
+def _format_job_brief(j: dict) -> str:
+    tag = "[borrow]" if j.get("mode") == "borrow" else ""
+    sc = j.get("localScore")
+    sc_tag = f"({sc:+.1f})" if sc else ""
+    return f"#{j['id']}{tag}{sc_tag} {j.get('title', '')[:16]}"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--event", required=True)
@@ -176,29 +246,60 @@ def main() -> int:
     ap.add_argument("--timeout-min", type=int, default=15)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--force", action="store_true", help="不跳过台账里已 3 星的关卡")
-    ap.add_argument("--max-potions", type=int, default=0,
-                    help="最多自动用几个理智药补理智（默认 0 = 不嗑药，理智不足就停手）；"
-                         "嗑药前必须 OCR 到「理智合剂」确认语，认不到直接停")
+    ap.add_argument(
+        "--no-borrow",
+        action="store_true",
+        help="禁用 borrow 助战自动降级（默认开启：ready 全败/无可用时自动用 supportUnitUsage=1 试 borrow）",
+    )
+    ap.add_argument(
+        "--webhook",
+        default="",
+        help="轻量 Webhook URL（支持飞书/钉钉/企业微信/Discord/通用 JSON POST；也可设事件配置 webhook 或 PICKER_WEBHOOK_URL）",
+    )
+    ap.add_argument(
+        "--webhook-every-stage",
+        action="store_true",
+        help="每关完成/失败也推送 Webhook（默认只在停手预警与整批汇总时推）",
+    )
+    ap.add_argument(
+        "--max-potions",
+        type=int,
+        default=0,
+        help="最多自动用几个理智药补理智（默认 0 = 不嗑药，理智不足就停手）；"
+        "嗑药前必须 OCR 到「理智合剂」确认语，认不到直接停",
+    )
     # 双开隔离：事件配置里写的是某台实例的 api/账号/设备，命令行可整套覆盖。
     ap.add_argument("--api", default="", help="copilot-picker URL 覆盖（如 http://127.0.0.1:8791）")
     ap.add_argument("--account", default="", help="账号 id 覆盖（默认取事件配置）")
     ap.add_argument("--client", default="", help="客户端覆盖（Official/Bilibili/YoStarJP...）")
     ap.add_argument("--client-package", dest="client_package", default="", help="目标客户端包名覆盖")
     ap.add_argument("--device", default="", help="adb 地址覆盖，如 127.0.0.1:16416")
-    ap.add_argument("--adb-name", dest="adb_name", default="",
-                    help="MaaToolkit 探测名覆盖，如 2-MuMuPlayer v5+（PI 按名字选设备）")
+    ap.add_argument(
+        "--adb-name",
+        dest="adb_name",
+        default="",
+        help="MaaToolkit 探测名覆盖，如 2-MuMuPlayer v5+（PI 按名字选设备）",
+    )
     ap.add_argument("--emu", default="", help="MuMu 实例号覆盖（adb 端口漂移时用它问 MuMuManager）")
     ap.add_argument("--progress", default="", help="台账 progress.json 覆盖（默认事件配置/环境变量）")
     args = ap.parse_args()
 
     cfg = load_event(args.event)
     for key, val in (
-        ("api", args.api), ("account", args.account), ("client", args.client),
-        ("client_package", args.client_package), ("device", args.device),
-        ("adb_name", args.adb_name), ("emu", args.emu),
+        ("api", args.api),
+        ("account", args.account),
+        ("client", args.client),
+        ("client_package", args.client_package),
+        ("device", args.device),
+        ("adb_name", args.adb_name),
+        ("emu", args.emu),
     ):
         if val:
             cfg[key] = val
+
+    webhook_url = (args.webhook or cfg.get("webhook") or os.environ.get("PICKER_WEBHOOK_URL") or "").strip()
+    allow_borrow = not args.no_borrow
+
     global PROGRESS
     if args.progress:
         PROGRESS = Path(args.progress)
@@ -207,7 +308,11 @@ def main() -> int:
     if PROGRESS is None:
         print("[warn] 未配置台账（--progress / 事件配置 progress / PICKER_PROGRESS）：按空台账跑，不读写 progress.json")
     else:
-        print(f"[cfg] api={cfg['api']} account={cfg.get('account')} device={cfg.get('device')} progress={PROGRESS}")
+        print(
+            f"[cfg] api={cfg['api']} account={cfg.get('account')} device={cfg.get('device')} "
+            f"progress={PROGRESS} borrow={'on' if allow_borrow else 'off'}"
+            + (" webhook=on" if webhook_url else "")
+        )
     set_device(address=cfg.get("device", ""), name=cfg.get("adb_name", ""))
     stages_cfg = cfg["stages"]
     if args.stages:
@@ -226,10 +331,8 @@ def main() -> int:
     post, get = api(cfg)
 
     # 客户端隔离：模拟器里其它服客户端一律 force-stop，目标客户端拉前台
-    # （2026-11-22 05:32 官服在前台被 maa startup 误唤醒，白打 3 场）
     try:
         resolve_device(cfg)  # MuMu 重启后 adb 端口会漂，先校正再连
-        # 端口漂移后把解析出的新地址同步给 PI（PI 按设备名匹配，地址也要对）
         set_device(address=cfg.get("device", ""), name=cfg.get("adb_name", ""))
         print(f"[cfg] 实际设备 {cfg.get('device')}（PI name={cfg.get('adb_name') or '沿用 setup 配置'}）")
         ensure_only_client(cfg)
@@ -248,34 +351,44 @@ def main() -> int:
 
     done, skipped, failed, raid_skipped, stars_short = [], [], [], [], []
     potions_used = 0
-    # 本轮内已经试过的作业（跨多次运行保留在 _tried.json，避免反复撞同一份 0★/2★ 作业）
     tried: dict[tuple[str, str], set[int]] = load_tried()
 
+    def notify(event: str, title: str, text: str, data: dict | None = None) -> None:
+        if webhook_url:
+            send_webhook(webhook_url, event, title, text, data)
+
     def push_one(code: str, st: dict, area: str, mode: str, cost: int) -> tuple[bool, str]:
-        """一关一个难度：导航 → 逐份作业执行。成功 True；失败给原因。"""
+        """一关一个难度：导航 → 逐份作业执行（ready 优先，自动降级 borrow 助战）。成功 True；失败给原因。"""
         nonlocal sanity_est
         if sanity_est is not None and sanity_est < cost:
             raise OutOfSanity(f"理智不足（估剩 {sanity_est} < {cost}）")
-        jobs = search_jobs(post, code, st["stageName"], args.max_jobs, mode)
+        jobs = search_jobs(post, code, st["stageName"], args.max_jobs, mode, allow_borrow=allow_borrow)
         if not jobs:
-            return False, "没有可用作业（名册匹配全 blocked）"
-        ids = [int(j["id"]) for j in jobs]
+            return False, "没有可用作业（名册匹配全 blocked/train）"
         key = (code, mode)
-        fresh_ids = [i for i in ids if i not in tried.get(key, set())]
-        if not fresh_ids:
+        fresh_jobs = [j for j in jobs if int(j["id"]) not in tried.get(key, set())]
+        if not fresh_jobs:
             return False, "候选作业本轮都试过了（0★/未达 3★），换搜索条件或人工挑作业再试"
-        ids = fresh_ids
-        print(f"   {mode} 作业候选：{ids}  "
-              + " | ".join(f"#{j['id']} {j['title'][:16]}" for j in jobs), flush=True)
-        # S 关（喀兰之心）MAA 的 find_stage 会把标签 OCR 成 0S-S-1 找不到，只能走手动模式：
-        # PI 一次调用「收上一场结算页 + 点开本关详情 + 校验右上角关卡代号」；要突袭再切一次。
+        ids = [int(j["id"]) for j in fresh_jobs]
+        print(
+            f"   {mode} 作业候选：{ids}  " + " | ".join(_format_job_brief(j) for j in fresh_jobs),
+            flush=True,
+        )
         manual = area in cfg.get("manual_areas", [])
         last_err = ""
-        for job_id in ids:
+        borrow_announced = False
+        for job in fresh_jobs:
+            job_id = int(job["id"])
+            is_borrow = job.get("mode") == "borrow"
+            support_usage = 1 if is_borrow else 0
+            if is_borrow and not borrow_announced:
+                borrow_announced = True
+                missing_str = "、".join(job.get("missing") or []) or "1 名干员"
+                print(
+                    f"   [borrow] 自动降级助战模式（supportUnitUsage=1），尝试 #{job_id}（借：{missing_str}）",
+                    flush=True,
+                )
             if manual:
-                # 可靠恢复顺序：不在详情页就先「收结算页」回主界面（这条链能处理结算/失败页），
-                # 再导航到 S 图，再调「进入S-N详情」（自带收结算 + 详情代号校验）。
-                # 不再单独用「收结算页留在地图」——它在 0 星结算页上实测会 30~120s 失败。
                 hint = page_hint(cfg)
                 if hint != "detail":
                     run_task("收结算页", timeout=180, log=print)
@@ -299,14 +412,23 @@ def main() -> int:
                         last_err = "PI 切突袭失败（突袭可能还没解锁）"
                         continue
             else:
-                go_area(cfg, area)  # PI：导航到区域图（已在图上时秒回）
-            run_id = start_run(post, cfg, code, st["stageName"], job_id, mode, args.timeout_min, manual=manual)
-            print(f"   #{job_id} run={run_id} 等待结算…", flush=True)
+                go_area(cfg, area)
+            run_id = start_run(
+                post,
+                cfg,
+                code,
+                st["stageName"],
+                job_id,
+                mode,
+                args.timeout_min,
+                manual=manual,
+                support_unit_usage=support_usage,
+            )
+            tag_sup = " [助战]" if support_usage else ""
+            print(f"   #{job_id}{tag_sup} run={run_id} 等待结算…", flush=True)
             snap = wait_run(get, run_id, args.timeout_min * 60 + 240)
             stt = snap.get("status")
             print(f"   -> {stt} {snap.get('error', '')}".rstrip(), flush=True)
-            # 手动模式打完游戏停在结算/失败页：下一次尝试的「收结算页/进入S-N详情」会处理它，
-            # 这里不做动作（避免在 0 星页上用不稳定的收页链空转）。
             if stt == "success":
                 if sanity_est is not None:
                     sanity_est -= cost
@@ -317,15 +439,10 @@ def main() -> int:
             if "BattleStartAll" in last_err:
                 raise OutOfSanity("MAA 起不了战斗（BattleStartAll），多半是理智不足——先补理智再继续")
             if not manual:
-                run_task("收结算页", timeout=180, log=print)  # 失败后先把页面收干净再换作业
+                run_task("收结算页", timeout=180, log=print)
         return False, last_err
 
     def use_potion() -> bool:
-        """理智不足时补一档药剂。返回是否补成功且验证到理智上涨。
-
-        双保险：PI 任务「补充理智」必须 OCR 到弹层底部的「理智合剂」确认语才点 ✓；
-        认不到就失败（绝不碰至纯源石）。补完再读一次理智，没涨也判失败。
-        """
         nonlocal potions_used, sanity_est
         before = read_sanity(cfg)
         if not run_task("补充理智", timeout=90, log=print):
@@ -335,13 +452,12 @@ def main() -> int:
         if after is None or (before is not None and after[0] <= before[0]):
             print(f"[stop] 用药后理智没验证到上涨（before={before}, after={after}），停手检查")
             return False
-        potions_used += 1  # 只有验证上涨才算真用了（防误把失败当已用）
+        potions_used += 1
         sanity_est = after[0]
         print(f"   已用药剂补理智：{before[0] if before else '?'} → {after[0]}")
         return True
 
     def push_mode(code: str, st: dict, area: str, mode: str, cost: int) -> tuple[str, str]:
-        """跑一关一个难度。返回 (结果类型, 说明)：ok / stars / fail / sanity / nav。"""
         nonlocal sanity_est
         try:
             ok, err = push_one(code, st, area, mode, cost)
@@ -351,13 +467,9 @@ def main() -> int:
             return "nav", str(e)
         if ok:
             return "ok", ""
-        # 没到 3 星（普通关 1/2 星）会被 picker 判失败并说明；和 0 星一样换过作业了
         if "星" in err and ("只拿到" in err or "三星" in err):
             return "stars", err
         return "fail", err
-
-    def rest_of_stage(block_mode: list[str], code: str, reason: str) -> None:
-        """本关后续难度不再尝试（普通没到 3★ / 突袭打不过）。——保留给以后批量调度用"""
 
     for code in codes:
         st = stages_cfg[code]
@@ -377,8 +489,10 @@ def main() -> int:
             if args.dry_run:
                 try:
                     go_area(cfg, area)
-                    jobs = search_jobs(post, code, st["stageName"], args.max_jobs)
-                    print(f"   {tag} 导航 ✓ 候选 {['#' + str(j['id']) for j in jobs]}")
+                    jobs = search_jobs(
+                        post, code, st["stageName"], args.max_jobs, mode, allow_borrow=allow_borrow
+                    )
+                    print(f"   {tag} 导航 ✓ 候选 {[_format_job_brief(j) for j in jobs]}")
                 except NavFailed as e:
                     print(f"   [dry-run] 导航失败：{e}")
                 continue
@@ -387,14 +501,26 @@ def main() -> int:
                 kind, err = push_mode(code, st, area, mode, cost)
                 if kind == "sanity":
                     if potions_used < args.max_potions and use_potion():
-                        continue  # 补完理智重试同一难度
+                        continue
                     print(f"[stop] {err}")
                     failed.append((code, err))
+                    notify(
+                        "out_of_sanity",
+                        f"[推关停手] {cfg.get('account')} · {code}/{tag} 理智不足",
+                        err,
+                        {"event": args.event, "account": cfg.get("account"), "stage": code, "mode": mode},
+                    )
                     stop_batch = True
                     break
                 if kind == "nav":
                     print(f"[stop] {err}")
                     failed.append((code, err))
+                    notify(
+                        "nav_failed",
+                        f"[推关停手] {cfg.get('account')} · {code}/{tag} PI 导航失败",
+                        err,
+                        {"event": args.event, "account": cfg.get("account"), "stage": code, "mode": mode},
+                    )
                     stop_batch = True
                     break
                 break
@@ -403,18 +529,45 @@ def main() -> int:
                 break
             if kind == "ok":
                 done.append(f"{code}/{tag}")
+                if args.webhook_every_stage:
+                    notify(
+                        "stage_done",
+                        f"[推关通过] {cfg.get('account')} · {code}/{tag}",
+                        f"已完成 {len(done)} 项，估剩理智 {sanity_est if sanity_est is not None else '?'}",
+                        {"event": args.event, "account": cfg.get("account"), "stage": code, "mode": mode},
+                    )
                 continue
             if kind == "stars":
-                # 普通关 1★/2★：台账记最高星，换作业已试完仍不够 → 本关突袭解锁不了，记下跳过
                 print(f"   普通关未达 3 星（{err}），台账已记最高星；本关突袭跳过，继续下一关")
                 stars_short.append(f"{code}（{err}）")
+                if args.webhook_every_stage:
+                    notify(
+                        "stars_short",
+                        f"[未达 3★] {cfg.get('account')} · {code}/普通",
+                        err,
+                        {"event": args.event, "account": cfg.get("account"), "stage": code},
+                    )
                 break
             if mode == "raid":
                 print(f"   突袭打不过（{err}），先记下跳过，继续下一关")
                 raid_skipped.append(f"{code}（{err}）")
+                if args.webhook_every_stage:
+                    notify(
+                        "raid_skipped",
+                        f"[突袭跳过] {cfg.get('account')} · {code}/突袭",
+                        err,
+                        {"event": args.event, "account": cfg.get("account"), "stage": code},
+                    )
                 break
             print(f"   普通关失败（{err}），继续下一关")
             failed.append((code, err))
+            if args.webhook_every_stage:
+                notify(
+                    "stage_failed",
+                    f"[推关失败] {cfg.get('account')} · {code}/普通",
+                    err,
+                    {"event": args.event, "account": cfg.get("account"), "stage": code},
+                )
             break
         if stop_batch:
             break
@@ -430,9 +583,38 @@ def main() -> int:
         print(f"本轮用了 {potions_used} 个理智药")
     if failed:
         print("失败/停手：", failed)
-        run_task("收结算页", timeout=180, log=print)  # 收尾：把游戏放回主界面
+
+    summary_lines = [
+        f"完成（{len(done)}）：{', '.join(done) if done else '无'}",
+        f"跳过已 3★（{len(skipped)}）：{', '.join(skipped) if skipped else '无'}",
+    ]
+    if stars_short:
+        summary_lines.append(f"未达 3★：{'; '.join(stars_short)}")
+    if raid_skipped:
+        summary_lines.append(f"突袭跳过：{'; '.join(raid_skipped)}")
+    if potions_used:
+        summary_lines.append(f"理智药消耗：{potions_used}")
+    if failed:
+        summary_lines.append(f"失败/停手：{'; '.join(f'{c}: {e}' for c, e in failed)}")
+    notify(
+        "batch_finish",
+        f"[推关汇总] {cfg.get('account')} · {args.event}（完成 {len(done)} / 失败 {len(failed)}）",
+        "\n".join(summary_lines),
+        {
+            "event": args.event,
+            "account": cfg.get("account"),
+            "done": done,
+            "skipped": skipped,
+            "stars_short": stars_short,
+            "raid_skipped": raid_skipped,
+            "failed": failed,
+            "potions_used": potions_used,
+        },
+    )
+
+    if failed:
+        run_task("收结算页", timeout=180, log=print)
         return 1
-    # 全部完成也收尾一次，别把游戏留在结算页
     run_task("收结算页", timeout=180, log=print)
     return 0
 

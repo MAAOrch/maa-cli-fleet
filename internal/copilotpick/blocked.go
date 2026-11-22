@@ -108,10 +108,62 @@ func (m *Manager) AddBlocked(name string, skill int) bool {
 	return true
 }
 
+// FormationUnavailableEvent 是 MAA 编队期 SubTaskExtraInfo 的 BattleFormationOperUnavailable 回调。
+type FormationUnavailableEvent struct {
+	OperName        string
+	RequirementType string
+}
+
+// parseFormationUnavailable 从 asst.log 文本里抓出所有 BattleFormationOperUnavailable 回调（去重、保序）。
+func parseFormationUnavailable(logText string) []FormationUnavailableEvent {
+	const marker = "SubTaskExtraInfo "
+	seen := map[string]bool{}
+	var out []FormationUnavailableEvent
+	for _, line := range strings.Split(logText, "\n") {
+		if !strings.Contains(line, "BattleFormationOperUnavailable") {
+			continue
+		}
+		idx := strings.Index(line, marker)
+		if idx < 0 {
+			continue
+		}
+		raw := strings.TrimSpace(line[idx+len(marker):])
+		var msg struct {
+			What    string `json:"what"`
+			Details struct {
+				OperName        string `json:"oper_name"`
+				RequirementType string `json:"requirement_type"`
+			} `json:"details"`
+		}
+		if err := json.Unmarshal([]byte(raw), &msg); err != nil {
+			continue
+		}
+		if msg.What != "BattleFormationOperUnavailable" {
+			continue
+		}
+		name := strings.TrimSpace(msg.Details.OperName)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, FormationUnavailableEvent{
+			OperName:        name,
+			RequirementType: strings.TrimSpace(msg.Details.RequirementType),
+		})
+	}
+	return out
+}
+
 // unavailableNames 从 MAA 日志里抓出所有 Unavailable 的干员名（去重、保序）。
 func unavailableNames(logText string) []string {
 	seen := map[string]bool{}
 	var out []string
+	for _, ev := range parseFormationUnavailable(logText) {
+		if !seen[ev.OperName] {
+			seen[ev.OperName] = true
+			out = append(out, ev.OperName)
+		}
+	}
 	for _, m := range unavailablePairRe.FindAllStringSubmatch(logText, -1) {
 		name := strings.TrimSpace(m[1])
 		if name == "" || seen[name] {

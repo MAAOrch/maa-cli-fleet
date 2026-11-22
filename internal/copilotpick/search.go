@@ -181,6 +181,7 @@ func (m *Manager) searchJobs(ctx context.Context, req SearchRequest, pages int) 
 	}
 
 	ext.RankJobs(jobs)
+	m.applyJobScores(jobs)
 	ext.RankJobs(blocked)
 	ext.RankJobs(train)
 	jobs = filterJobsByMode(jobs, req.Mode)

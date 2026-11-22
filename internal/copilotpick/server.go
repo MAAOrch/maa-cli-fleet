@@ -49,6 +49,7 @@ func NewHandler(m *Manager) http.Handler {
 	mux.HandleFunc("POST /api/nav/home", h.navHome)
 	mux.HandleFunc("POST /api/nav/restart", h.navRestart)
 	mux.HandleFunc("GET /api/progress", h.progressList)
+	mux.HandleFunc("GET /api/job-scores", h.jobScoresList)
 	mux.HandleFunc("GET /api/unavailable", h.unavailable)
 	mux.HandleFunc("POST /api/unavailable/clear", h.clearUnavailable)
 	mux.HandleFunc("GET /api/ui-state", h.getUIState)
@@ -534,6 +535,16 @@ func (h *handler) clearUnavailable(w http.ResponseWriter, r *http.Request) {
 func (h *handler) progressList(w http.ResponseWriter, r *http.Request) {
 	list := h.m.Progress()
 	writeJSON(w, http.StatusOK, map[string]any{"stages": list, "count": len(list)})
+}
+
+// jobScoresList 返回跨号共享作业评分库（job_scores.json）。
+func (h *handler) jobScoresList(w http.ResponseWriter, r *http.Request) {
+	list := h.m.JobScores()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"scores": list,
+		"count":  len(list),
+		"path":   h.m.cfg.JobScoresPath(),
+	})
 }
 
 // ---- 导航 ----

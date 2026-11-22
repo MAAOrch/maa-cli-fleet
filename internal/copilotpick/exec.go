@@ -217,11 +217,12 @@ func (r *Run) run() {
 				}
 			}
 			// 作业要的干员已被记成「编不进队」：直接跳过，别浪费一次 40 秒的编队失败。
-			if label, blocked := r.jobBlocked(jobFile); blocked {
+			if label, blocked := r.jobBlocked(jobFile); blocked && r.opts.SupportUnitUsage == 0 {
 				lastErr = fmt.Sprintf("作业 #%d 要 %s，这个号编不进队（已记 unavailable），跳过", id, label)
 				r.event("warn", "attempt", lastErr)
 				continue
 			}
+			r.resetAttemptFlags()
 			r.snapShot(ctx, "作业前")
 
 			var ok bool
@@ -251,8 +252,14 @@ func (r *Run) run() {
 				if mode == "normal" && stars < 3 {
 					lastErr = fmt.Sprintf("作业 #%d 只拿到 %d 星（普通关要 3 星才解锁突袭，台账已记最高星），换下一份作业重打", id, stars)
 					r.event("warn", "attempt", lastErr)
+					if !r.opts.NoProgress && r.opts.CopilotFile == "" {
+						r.m.RecordJobOutcome(id, st.StageCode, mode, r.acc.ID, OutcomePassLow, lastErr)
+					}
 					stageOK = false
 					continue
+				}
+				if !r.opts.NoProgress && r.opts.CopilotFile == "" {
+					r.m.RecordJobOutcome(id, st.StageCode, mode, r.acc.ID, OutcomePass3, "")
 				}
 				break
 			}
@@ -272,6 +279,19 @@ func (r *Run) run() {
 				break
 			}
 			lastErr = fmt.Sprintf("作业 #%d 失败：%s", id, msg)
+			if !r.opts.NoProgress && r.opts.CopilotFile == "" {
+				mode := "normal"
+				if raidSet[id] {
+					mode = "raid"
+				}
+				outcome := OutcomeFailOther
+				if tripped, _ := r.formationTripped(); tripped {
+					outcome = OutcomeFailFormation
+				} else if strings.Contains(msg, "作战失败") || strings.Contains(msg, "0 星") || strings.Contains(msg, "结算页") {
+					outcome = OutcomeFailBattle
+				}
+				r.m.RecordJobOutcome(id, st.StageCode, mode, r.acc.ID, outcome, msg)
+			}
 			r.event("warn", "attempt", lastErr+"，换下一份")
 		}
 		if stageOK {
@@ -777,7 +797,13 @@ func (r *Run) runCopilot(ctx context.Context, profile string, jobID int, jobFile
 	}
 	tail := newLogTail(r.m.cfg.AsstLogPath())
 	tail.SkipAll()
+	watchStop := make(chan struct{})
+	go r.formationCircuitWatch(ctx, watchStop, jobFile)
 	res, err := r.runMaa(ctx, time.Duration(r.opts.TimeoutMin)*time.Minute, args...)
+	close(watchStop)
+	if tripped, tripMsg := r.formationTripped(); tripped {
+		return false, tripMsg
+	}
 	logText := tail.Read()
 	if err != nil {
 		return false, "作业执行出错：" + err.Error()
@@ -896,7 +922,88 @@ func (r *Run) navLoopWatch(ctx context.Context, stop <-chan struct{}) {
 	}
 }
 
-// navStuck 判这一轮是不是被导航看门狗掐掉的。
+// resetAttemptFlags 每次尝试新作业前清空单次看门狗标记。
+func (r *Run) resetAttemptFlags() {
+	r.infraMu.Lock()
+	r.navStuckFlag = false
+	r.formationTrippedFlag = false
+	r.formationTrippedMsg = ""
+	r.infraMu.Unlock()
+}
+
+// formationTripped 返回当前作业是否触发了编队期实时熔断及其原因。
+func (r *Run) formationTripped() (bool, string) {
+	r.infraMu.Lock()
+	defer r.infraMu.Unlock()
+	return r.formationTrippedFlag, r.formationTrippedMsg
+}
+
+// formationCircuitWatch 编队期实时熔断看门狗：
+// 每秒 tail 一次 asst.log，捕获 MAA 的 SubTaskExtraInfo（what="BattleFormationOperUnavailable",
+// details={oper_name, requirement_type}）。
+// - 不用助战（SupportUnitUsage == 0）：命中 1 名不可用干员立即熔断（省去 30~60s 编队重试空耗）；
+// - 助战模式（SupportUnitUsage > 0）：容忍 1 名干员走助战，命中 ≥2 名不同不可用干员再熔断。
+// 熔断时立刻写入 unavailable.json（learnUnavailable）并杀掉当前 maa 进程树。
+func (r *Run) formationCircuitWatch(ctx context.Context, stop <-chan struct{}, jobFile string) {
+	if !r.opts.Formation {
+		return
+	}
+	threshold := 1
+	if r.opts.SupportUnitUsage > 0 {
+		threshold = 2
+	}
+	watch := newLogTail(r.m.cfg.AsstLogPath())
+	watch.SkipAll()
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	seen := map[string]FormationUnavailableEvent{}
+	var order []string
+	var buf strings.Builder
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-stop:
+			return
+		case <-ticker.C:
+			chunk := watch.Read()
+			if chunk == "" {
+				continue
+			}
+			buf.WriteString(chunk)
+			for _, ev := range parseFormationUnavailable(chunk) {
+				if _, ok := seen[ev.OperName]; !ok {
+					seen[ev.OperName] = ev
+					order = append(order, ev.OperName)
+				}
+			}
+			if len(order) < threshold {
+				continue
+			}
+			parts := make([]string, 0, len(order))
+			for _, name := range order {
+				ev := seen[name]
+				if ev.RequirementType != "" {
+					parts = append(parts, fmt.Sprintf("%s(%s)", ev.OperName, ev.RequirementType))
+				} else {
+					parts = append(parts, ev.OperName)
+				}
+			}
+			msg := "编队期实时熔断：干员不可用（" + strings.Join(parts, "、") + "）"
+			r.infraMu.Lock()
+			r.formationTrippedFlag = true
+			r.formationTrippedMsg = msg
+			r.infraMu.Unlock()
+			r.learnUnavailable(jobFile, buf.String())
+			r.event("warn", "attempt", msg+"，立即中止当前作业并避雷")
+			if p := r.currentProc(); p != nil {
+				killTree(p.Pid)
+			}
+			return
+		}
+	}
+}
 func (r *Run) navStuck() bool {
 	r.infraMu.Lock()
 	defer r.infraMu.Unlock()
@@ -972,10 +1079,14 @@ func (r *Run) runJobList(ctx context.Context, profile string, jobID int, jobFile
 	// 实测一次卡到 20 分钟超时（TL-S-2，滑屏 160 次）。这里发现循环就掐掉。
 	watchStop := make(chan struct{})
 	go r.navLoopWatch(ctx, watchStop)
+	go r.formationCircuitWatch(ctx, watchStop, jobFile)
 	res, err := r.runMaa(ctx, time.Duration(r.opts.TimeoutMin)*time.Minute,
 		"run", name, "-p", profile, "--batch", "--no-summary")
 	close(watchStop)
 	logText := tail.Read()
+	if tripped, tripMsg := r.formationTripped(); tripped {
+		return false, false, tripMsg
+	}
 	if r.navStuck() {
 		return false, true, "MAA 在章节列表里找不到该关（活动 EX/S 图不在主章节列表），" +
 			"已提前中止；这条线请用「手动模式 + tools/picker_push」推"
