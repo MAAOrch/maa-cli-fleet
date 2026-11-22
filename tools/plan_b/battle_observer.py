@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """Plan B：白盒战斗观测（高频轻量采样 + 事故九宫格 + action_trace）。
 
-设计目标（2026-11-22 用户要求）：
-  1. 每 1.5~2.0s 采一帧，**只进内存环形缓冲**（deque，保留最近 ~20s），不逐帧落盘；
+设计目标（2026-11-22 用户要求，2026-11-23 调整）：
+  1. 默认每 3.0s 采一帧（进入战斗后前 25s 静默不截帧），**只进内存环形缓冲**
+     （deque，保留最近 ~36s），不逐帧落盘；战斗前探测间隔放宽到 ≥4.0s，避免和
+     编队/加载抢 ADB；
   2. 采样时只对顶部/右下几个**极小 ROI** 做 OCR（击杀数/费用/蓝门生命），不跑全图 OCR，
      避免拖慢模拟器或干扰 MaaCore 触控；
   3. 命中异常（蓝门掉血 / 任务失败页 / 99费且击杀停滞25s / 结算<3★）时，把出事前最近
@@ -38,6 +40,14 @@ DEFAULT_RUNS = pathlib.Path(r"D:\copilot-picker-local\runs")
 MAA_LOG = pathlib.Path(r"D:\copilot-picker-local\data_copilot\maa_state\debug\asst.log")
 ADB = r"D:\Xiach\MuMuPlayer\nx_main\adb.exe"
 PI_IMG = REPO / "pi" / "arknights-event" / "resource" / "image" / "EventNav"
+
+# 失败页模板按 1280x720 参考分辨率裁剪；其它分辨率按宽度等比缩放模板后再匹配。
+FAIL_TPL_REF_WIDTH = 1280
+FAIL_MATCH_THRESHOLD = 0.75
+# 进入战斗前（编队/加载/过场）放宽探测间隔，别和 MaaCore 抢 ADB。
+PREBATTLE_MIN_INTERVAL = 4.0
+# 战斗内低频 OCR 补标签的周期（分镜标注用）。
+LABEL_REFRESH_SECS = 20.0
 
 _OCR = None
 
@@ -78,8 +88,24 @@ def _fail_template():
     return _FAIL_TEMPLATES[0] if _FAIL_TEMPLATES else None
 
 
+def _decode_raw_screencap(data: bytes):
+    """解析 `screencap` 原始帧（RGBA）并转成 OpenCV 约定的 **BGR**。
+
+    坑：`adb exec-out screencap` 原始帧是 RGBA，直接 `arr[:, :, :3]` 得到的是 **RGB**；
+    而 `cv2.imread` 读出的模板是 BGR，通道反了会严重拉低 `matchTemplate` 得分。
+    """
+    if not data or len(data) < 16:
+        return None
+    import struct
+    w, h = struct.unpack_from("<II", data, 0)
+    if w <= 0 or h <= 0 or len(data) < 12 + w * h * 4:
+        return None
+    arr = np.frombuffer(data, dtype=np.uint8, count=w * h * 4, offset=12).reshape(h, w, 4)
+    return cv2.cvtColor(arr, cv2.COLOR_RGBA2BGR)
+
+
 def _shot_raw(device: str, timeout: float = 10.0):
-    """`adb exec-out screencap` 原始帧（RGBA），比 `-p` 的 PNG 快一个数量级。
+    """`adb exec-out screencap` 原始帧（RGBA→BGR），比 `-p` 的 PNG 快一个数量级。
 
     实测 `screencap -p` 单帧 ~3.4s（设备端 PNG 编码 + 管道传输），这是之前"白盒采样
     把模拟器拖慢、MAA 超时"的元凶。原始帧只需传输+解码，单帧 ~0.4s。
@@ -89,15 +115,7 @@ def _shot_raw(device: str, timeout: float = 10.0):
                            capture_output=True, timeout=timeout)
     except Exception:  # noqa: BLE001
         return None
-    data = p.stdout
-    if not data or len(data) < 16:
-        return None
-    import struct
-    w, h = struct.unpack_from("<II", data, 0)
-    if w <= 0 or h <= 0 or len(data) < 12 + w * h * 4:
-        return None
-    arr = np.frombuffer(data, dtype=np.uint8, count=w * h * 4, offset=12).reshape(h, w, 4)
-    return arr[:, :, :3].copy()
+    return _decode_raw_screencap(p.stdout)
 
 
 def _shot_bytes(device: str, timeout: float = 15.0) -> bytes | None:
@@ -169,7 +187,7 @@ def _cost99_template(np_img=None):
 class FastHud:
     """轻量 HUD：每帧只做像素哈希 + 模板匹配（毫秒级），OCR 低频兜底。
 
-    为什么不用 OCR：实测 RapidOCR 单次 1.2~4.5s，1.8s 采样根本跑不动，还会拖慢本机。
+    为什么不用 OCR：实测 RapidOCR 单次 1.2~4.5s，3.0s 采样根本跑不动，还会拖慢本机。
     这里只判「击杀数变没变 / 是否满费 99 / 是否任务失败页」，数值标签用低频 OCR 的值。
     """
 
@@ -205,12 +223,31 @@ class FastHud:
         r = cv2.matchTemplate(c, _cost99_tpl, cv2.TM_CCOEFF_NORMED)
         return float(r.max()) >= 0.85
 
+    def fail_score(self, img) -> float:
+        """失败页模板匹配得分（0~1）。
+
+        round-11 事故：原实现把整帧 `resize(fx=0.5)` 却**不缩放模板**，
+        345x185 的模板去匹配缩成 ~140x62 的 logo，得分只有 ~0.19，
+        连续 6 帧失败页全部漏判。这里保持全分辨率，只在分辨率不是 1280 宽时
+        按宽度等比缩放模板；同时 `_shot_raw` 已统一返回 BGR，与 `cv2.imread` 模板同通道。
+        """
+        if self.fail_tpl is None or img is None:
+            return 0.0
+        h, w = img.shape[:2]
+        scale = w / float(FAIL_TPL_REF_WIDTH)
+        tpl = self.fail_tpl
+        if abs(scale - 1.0) > 0.01:
+            tw = max(1, int(round(tpl.shape[1] * scale)))
+            th = max(1, int(round(tpl.shape[0] * scale)))
+            tpl = cv2.resize(tpl, (tw, th),
+                             interpolation=cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR)
+        if tpl.shape[0] > h or tpl.shape[1] > w:
+            return 0.0
+        r = cv2.matchTemplate(img, tpl, cv2.TM_CCOEFF_NORMED)
+        return float(r.max())
+
     def is_fail_page(self, img) -> bool:
-        if self.fail_tpl is None:
-            return False
-        big = cv2.resize(img, None, fx=0.5, fy=0.5)
-        r = cv2.matchTemplate(big, self.fail_tpl, cv2.TM_CCOEFF_NORMED)
-        return float(r.max()) >= 0.75
+        return self.fail_score(img) >= FAIL_MATCH_THRESHOLD
 
     def update(self, img, now: float) -> dict:
         h = self._h(img)
@@ -320,9 +357,10 @@ def make_contact_sheet(frames: list[dict], out_path: pathlib.Path, incident_t: f
 class BattleObserver(threading.Thread):
     """高频轻量采样 + 环形缓冲 + 异常熔断。"""
 
-    def __init__(self, device: str, out_dir: pathlib.Path, interval: float = 1.8,
+    def __init__(self, device: str, out_dir: pathlib.Path, interval: float = 3.0,
                  ring: int = 12, early_stop: bool = False, stop_cb=None,
-                 battle_min_confirm: float = 20.0, stall_secs: float = 25.0):
+                 battle_min_confirm: float = 20.0, stall_secs: float = 25.0,
+                 startup_quiet_secs: float = 25.0):
         super().__init__(daemon=True)
         self.device = device
         self.out_dir = out_dir
@@ -332,6 +370,7 @@ class BattleObserver(threading.Thread):
         self.stop_cb = stop_cb
         self.battle_min_confirm = battle_min_confirm
         self.stall_secs = stall_secs
+        self.startup_quiet_secs = max(0.0, float(startup_quiet_secs))
         self.stop_flag = threading.Event()
         self.timeline: list[dict] = []
         self.perf: list[float] = []
@@ -351,7 +390,7 @@ class BattleObserver(threading.Thread):
     def bind_run(self, picker: str, run_id: str) -> None:
         """绑定 picker run：采样改用 /api/run/<id>/shot（MaaCore 自己截的帧，零额外 adb 负载）。
 
-        为什么：1.8s 一次的 `adb exec-out screencap` 会和 MaaCore 抢 adb（实测单帧 3.4s、
+        为什么：即使 3.0s 一次的 `adb exec-out screencap` 也会和 MaaCore 抢 adb（实测单帧 3.4s、
         MAA 识别超时 → 任务链报错）。改用 picker 缓存的截图后对 MAA 完全无干扰。
         """
         self.picker = picker.rstrip("/")
@@ -367,6 +406,19 @@ class BattleObserver(threading.Thread):
 
     def _battle_elapsed(self) -> float:
         return (time.time() - self.battle_start) if self.battle_start else 0.0
+
+    def _probe_interval(self) -> float:
+        """本轮采样后的等待间隔：战斗前 ≥4.0s，避免抢编队/加载期的 ADB。"""
+        if self.battle_start is None:
+            return max(PREBATTLE_MIN_INTERVAL, self.interval)
+        return self.interval
+
+    def _quiet_remaining(self, now: float | None = None) -> float:
+        """开局静默期剩余秒数；>0 时主循环只等待，绝不向 ADB 发 screencap。"""
+        if self.battle_start is None:
+            return 0.0
+        now = time.time() if now is None else now
+        return max(0.0, self.battle_start + self.startup_quiet_secs - now)
 
     def _confirm(self, kind: str, hit: bool, now: float) -> bool:
         """连续 2 帧命中同一异常才算确认（防加载黑屏/单帧 OCR 抖动误熔断）。"""
@@ -396,12 +448,20 @@ class BattleObserver(threading.Thread):
         fail_tpl = _fail_template()
         fast = FastHud(fail_tpl)
         i = 0
+        last_labels = 0.0
         while not self.stop_flag.is_set():
+            # 0) 开局静默期：确认 battle_start 后 startup_quiet_secs 内完全不截帧，
+            #    把开局的 ADB/CPU 全部让给 MaaCore 部署关键干员；只等停止信号。
+            quiet = self._quiet_remaining()
+            if quiet > 0:
+                self.stop_flag.wait(quiet)
+                continue
+
             i += 1
             t0 = time.time()
             img = self._grab()
             if img is None:
-                time.sleep(self.interval)
+                self.stop_flag.wait(self._probe_interval())
                 continue
             now = time.time()
             fast.update(img, now)
@@ -410,39 +470,49 @@ class BattleObserver(threading.Thread):
                 fast.fail_streak += 1
             else:
                 fast.fail_streak = 0
-            # 低频 OCR 补数值标签（每 12 帧 ≈ 20s 一次）
-            if i == 1 or i % 12 == 0:
+            # OCR：战斗前每次探测都做（尽早确认 battle_start）；战斗后低频 ~20s 一次。
+            if self.battle_start is None or (now - last_labels) >= LABEL_REFRESH_SECS:
                 fast.refresh_labels(img, now)
+                last_labels = now
             labels = {"kills": fast.kills_value, "kills_total": fast.kills_total,
                       "life": fast.life, "cost": fast.cost}
-            if fast.kills_value is not None and self.battle_start is None:
+            # 确认进入战斗：击杀数可读，或「蓝门生命 + 费用」同时可读（都是战斗 HUD 特征）。
+            # 只认击杀数会在 OCR 漏读击杀 ROI 时永远进不了战斗（round-11 就是如此）。
+            if self.battle_start is None and (
+                    fast.kills_value is not None
+                    or (fast.life is not None and fast.cost is not None)):
                 self.battle_start = now
+                # 丢掉编队/加载期探测帧，分镜只保留战斗画面。
+                self.buf.clear()
             if fast.life is not None and self.initial_life is None:
                 self.initial_life = fast.life
-            small = cv2.resize(img, (640, 360), interpolation=cv2.INTER_AREA)
-            self.buf.append({"t": now, "img": small, "full": img, "hud": dict(labels)})
+            # 环形缓冲只在战斗内采样（静默期已在循环顶部跳过）。
+            if self.battle_start is not None:
+                small = cv2.resize(img, (640, 360), interpolation=cv2.INTER_AREA)
+                self.buf.append({"t": now, "img": small, "full": img, "hud": dict(labels)})
             self.perf.append(now - t0)
             self.timeline.append({"t": round(now, 1), "poll": i,
                                   "elapsed": round(self._battle_elapsed(), 1), **labels,
                                   "cost99": fast.cost_is_99(img), "fail": fail,
                                   "ms": round((now - t0) * 1000)})
 
-            # ---- 异常判定（连续 2 帧确认 + 战斗 ≥20s）----
-            life_drop = (self.initial_life is not None and fast.life is not None
-                         and fast.life < self.initial_life)
-            if self._confirm("life_drop", life_drop, now):
-                self._fire_incident("life_drop", now, drop=True)
+            # ---- 异常判定（连续 2 帧确认 + 战斗 ≥20s；静默期不会走到这里）----
+            if self.battle_start is not None:
+                life_drop = (self.initial_life is not None and fast.life is not None
+                             and fast.life < self.initial_life)
+                if self._confirm("life_drop", life_drop, now):
+                    self._fire_incident("life_drop", now, drop=True)
 
-            stall = False
-            if self._battle_elapsed() >= self.battle_min_confirm and fast.last_kills_change:
-                stalled = (now - fast.last_kills_change) >= self.stall_secs
-                stall = stalled and fast.cost_is_99(img)
-            if self._confirm("stall99", stall, now):
-                self._fire_incident("stall99", now, drop=True)
+                stall = False
+                if self._battle_elapsed() >= self.battle_min_confirm and fast.last_kills_change:
+                    stalled = (now - fast.last_kills_change) >= self.stall_secs
+                    stall = stalled and fast.cost_is_99(img)
+                if self._confirm("stall99", stall, now):
+                    self._fire_incident("stall99", now, drop=True)
 
-            if self._confirm("task_fail", fail, now):
-                self._fire_incident("task_fail", now, drop=True)
-            time.sleep(max(0.0, self.interval - (time.time() - t0)))
+                if self._confirm("task_fail", fail, now):
+                    self._fire_incident("task_fail", now, drop=True)
+            self.stop_flag.wait(max(0.0, self._probe_interval() - (time.time() - t0)))
 
     def stop(self) -> None:
         self.stop_flag.set()

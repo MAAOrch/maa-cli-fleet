@@ -167,7 +167,7 @@ def write_next_prompt(bundle: pathlib.Path, report: dict) -> None:
              f"- 关键帧目录：`{rd / 'frames'}`", "",
              "## 改轴要点", "1. 打开 `prompt_pack.md` 的硬性约束逐条核对。",
              "2. 看 `frames/` 里击杀数最高那帧和蓝门掉血帧，找崩盘点（漏怪/费用不够/阻挡不足）。",
-             "3. 优先换高练度主力、把 `skill_usage` 改 2、用 `costs`/`kills` 触发。",
+             "3. 优先换高练度主力、非关键轴手动技能把 `skill_usage` 设 1（好了就开），自动/永续技能设 0、用 `costs`/`kills` 触发。",
              "4. 改完写回 `candidate.json`，重跑 iterate.py（会再走 validator → 演习）。"]
     (rd / "next_round_prompt.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -181,8 +181,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--rounds", type=int, default=1)
     ap.add_argument("--picker", default=DEFAULT_PICKER)
     ap.add_argument("--timeout-min", type=int, default=15)
-    ap.add_argument("--poll-interval", type=float, default=1.8,
-                    help="采样间隔秒（默认 1.8，白盒模式）")
+    ap.add_argument("--poll-interval", type=float, default=3.0,
+                    help="采样间隔秒（默认 3.0，白盒模式；进入战斗后前 25s 静默不截帧）")
     ap.add_argument("--no-early-stop", action="store_true",
                     help="关闭演习熔断（默认开启：蓝门掉血/99费停滞 25s 即中止本局）")
     ap.add_argument("--skip-validate", action="store_true")
