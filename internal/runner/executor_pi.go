@@ -96,9 +96,13 @@ func (e *piExecutor) writeConfig(project, entry string, params map[string]any) e
 	if params == nil {
 		params = map[string]any{}
 	}
+	resource := loadPiResource(project)
+	if resource == "" {
+		resource = "Demo"
+	}
 	cfg := map[string]any{
 		"controller": map[string]any{"name": "Android"},
-		"resource":   "Demo",
+		"resource":   resource,
 		"task": []any{
 			map[string]any{
 				"name":   entry,
@@ -176,4 +180,34 @@ func runPiCommand(ctx context.Context, exe string, args []string, dir string) ([
 	cmd := exec.CommandContext(ctx, exe, args...)
 	cmd.Dir = dir
 	return cmd.CombinedOutput()
+}
+
+// loadPiResource 从 pi/<project>/interface.json 读取第一个 resource.name。
+func loadPiResource(project string) string {
+	if project == "" {
+		return ""
+	}
+	// 优先在工作区 pi/ 下查找（测试/开发）
+	candidates := []string{
+		filepath.Join("pi", project, "interface.json"),
+		filepath.Join(".", "pi", project, "interface.json"),
+	}
+	for _, p := range candidates {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		var iface struct {
+			Resource []struct {
+				Name string `json:"name"`
+			} `json:"resource"`
+		}
+		if err := json.Unmarshal(b, &iface); err != nil {
+			continue
+		}
+		if len(iface.Resource) > 0 && iface.Resource[0].Name != "" {
+			return iface.Resource[0].Name
+		}
+	}
+	return ""
 }

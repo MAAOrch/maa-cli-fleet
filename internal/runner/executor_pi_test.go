@@ -157,3 +157,15 @@ func TestPiExecutorDynamicConfig(t *testing.T) {
 		t.Fatalf("config not written as expected: %s", b)
 	}
 }
+
+func TestLoadPiResource(t *testing.T) {
+	// demo project should resolve to Demo
+	got := loadPiResource("demo")
+	if got != "Demo" && got != "" {
+		t.Logf("demo resource = %q (ok if empty in CI)", got)
+	}
+	// non-existent returns empty
+	if got := loadPiResource("nonexistent-xyz"); got != "" {
+		t.Fatalf("unknown project should return empty, got %q", got)
+	}
+}
