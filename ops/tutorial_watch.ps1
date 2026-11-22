@@ -20,8 +20,7 @@ $Log     = Join-Path $Root 'runner\tutorial_watch.log'
 $ShotDir = Join-Path $Root 'runner\tutorial_shots'
 $StopFile= Join-Path $Root 'runner\tutorial_watch.stop'
 $HbFile  = Join-Path $Root 'runner\tutorial_watch.hb'
-$TplPath = Join-Path $Root 'ops\assets\tutorial_tpl_close.png'
-if (-not (Test-Path $TplPath)) { $TplPath = Join-Path $Root 'runner\tutorial_tpl_close.png' }
+$TplPath = Join-Path $Root 'runner\tutorial_tpl_close.png'
 $BaseX = 95; $BaseY = 85; $TapX = 152; $TapY = 109
 $RefWidth = 1280
 
@@ -83,6 +82,16 @@ public static class TutMatcher
 "@
 
 $Tpl = [System.Drawing.Bitmap]::FromFile($TplPath)
+$PanelTplPath = Join-Path $Root 'runner\panel_close.png'
+$PanelBaseX = 600; $PanelBaseY = 655
+$PanelTapX = 638; $PanelTapY = 675
+$PanelTpl = $null
+$PanelTpl = $null  # disabled: same close-button template matches the burden-selection dialog and breaks MAA flow
+$LeaveTplPath = Join-Path $Root 'runner\dlg_leave_area.png'
+$ResetTplPath = Join-Path $Root 'runner\dlg_reset_squad.png'
+$LeaveTpl = $null; $ResetTpl = $null
+$LeaveTpl = $null  # disabled: only the tutorial X popup may be tapped
+$ResetTpl = $null  # disabled: only the tutorial X popup may be tapped
 
 function Get-EffThreshold([int]$width)
 {
@@ -120,15 +129,18 @@ try { $Cfg = Get-Content -Path $CfgPath -Raw -Encoding UTF8 | ConvertFrom-Json }
 $Adb = ''
 if ($Cfg -and $Cfg.adbExe) { $Adb = [string]$Cfg.adbExe }
 if (-not $Adb -or -not (Test-Path $Adb)) {
-    $alt = Join-Path $Root 'bin\adb\adb.exe'
-    if (Test-Path $alt) { $Adb = $alt }
+    $cands = @(
+        'C:\Program Files\Netease\MuMu Player 12\nx_main\adb.exe',
+        (Join-Path $Root 'bin\adb\adb.exe')
+    )
+    foreach ($c in $cands) { if (Test-Path $c) { $Adb = $c; break } }
 }
 if (-not (Test-Path $Adb)) { LogLine ('FATAL adb not found: ' + $Adb); exit 2 }
 
 function Get-RoguePorts()
 {
     try {
-        return @(Get-CimInstance Win32_Process -Filter "Name='maa.exe'" -ErrorAction SilentlyContinue |
+        return @(Get-CimInstance Win32_Process -Filter "Name='maa.exe' OR Name='maa.real.exe'" -ErrorAction SilentlyContinue |
             Where-Object { $_.CommandLine -and $_.CommandLine -match '--batch\s+run\s+rogue_' } |
             ForEach-Object { if ($_.CommandLine -match '-a\s+127\.0\.0\.1:(\d+)') { $Matches[1] } } |
             Sort-Object -Unique)
@@ -180,11 +192,18 @@ if ($Probe) {
     exit 0
 }
 
+# Single-instance guard: two watchers would tap the same popup twice.
+$others = @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -match 'tutorial_watch\.ps1' -and $_.CommandLine -notmatch 'boot_tutorial' })
+if ($others.Count -gt 0) { Write-Output ('already running pid=' + $others[0].ProcessId + ' -> exit'); exit 0 }
+$script:Mutex = New-Object System.Threading.Mutex($false, 'Global\TutorialWatchErazer')
+if (-not $script:Mutex.WaitOne(0)) { Write-Output ('already running pid=' + $PID + ' -> exit'); exit 0 }
+
 New-Item -ItemType Directory -Force -Path $ShotDir | Out-Null
 Rotate-IfBig $Log 8
 LogLine ('watcher start pid=' + $PID + ' adb=' + $Adb + ' intervalMs=' + $IntervalMs + ' threshold=' + $Threshold)
 
 $LastTap = @{}
+$LastPanelTap = @{}
 $loop = 0
 while (-not (Test-Path $StopFile)) {
     $loop++
@@ -205,6 +224,37 @@ while (-not (Test-Path $StopFile)) {
                     Tap-Close $port $scale
                     $LastTap[$port] = $now
                     LogLine ('CLICK port=' + $port + ' score=' + [Math]::Round($score, 2) + ' shot=' + (Split-Path $shot -Leaf))
+                }
+            }
+            if ($PanelTpl) {
+                $pscore = [TutMatcher]::Score($bmp, $PanelTpl, $PanelBaseX, $PanelBaseY)
+                if ($pscore -lt $eff) {
+                    $pnow = [DateTime]::UtcNow
+                    $plast = $script:LastPanelTap[$port]
+                    if ((-not $plast) -or (($pnow - $plast).TotalSeconds -gt 2.5)) {
+                        $pscale = [double]$bmp.Width / [double]$RefWidth
+                        $ptx = [int][Math]::Round($PanelTapX * $pscale)
+                        $pty = [int][Math]::Round($PanelTapY * $pscale)
+                        & $script:Adb -s ('127.0.0.1:' + $port) shell input tap $ptx $pty 2>&1 | Out-Null
+                        $LastPanelTap[$port] = $pnow
+                        LogLine ('CLICK-PANEL port=' + $port + ' score=' + [Math]::Round($pscore, 2))
+                    }
+                }
+            }
+            if ($LeaveTpl) {
+                $lscore = [TutMatcher]::Score($bmp, $LeaveTpl, 400, 245)
+                if ($lscore -lt 10) {
+                    & $script:Adb -s ('127.0.0.1:' + $port) shell input tap 855 481 2>&1 | Out-Null
+                    LogLine ('CLICK-LEAVE port=' + $port + ' score=' + [Math]::Round($lscore, 2))
+                    Start-Sleep -Milliseconds 1200
+                }
+            }
+            if ($ResetTpl) {
+                $rscore = [TutMatcher]::Score($bmp, $ResetTpl, 400, 240)
+                if ($rscore -lt 10) {
+                    & $script:Adb -s ('127.0.0.1:' + $port) shell input tap 1070 481 2>&1 | Out-Null
+                    LogLine ('CLICK-RESET port=' + $port + ' score=' + [Math]::Round($rscore, 2))
+                    Start-Sleep -Milliseconds 1200
                 }
             }
         } catch {

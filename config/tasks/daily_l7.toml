@@ -11,11 +11,6 @@ params = { client_type = "YoStarJP", start_game_enabled = true }
 [[tasks]]
 name = "刷理智"
 type = "Fight"
-params = { stage = "PA-6", medicine = 0, stone = 0, series = 0 }
-
-[[tasks]]
-name = "刷剩余理智"
-type = "Fight"
 params = { stage = "1-7", medicine = 0, stone = 0, series = 0 }
 
 [[tasks]]
@@ -36,4 +31,4 @@ params = { visit_friends = true, shopping = true, buy_first = ["招聘许可"], 
 [[tasks]]
 name = "领取奖励"
 type = "Award"
-params = { award = true, mail = true }
+params = { award = true, mail = true, free_gacha = true, orundum = true, mining = true, special_access = true, sign_in_event = true }

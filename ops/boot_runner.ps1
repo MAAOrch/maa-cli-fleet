@@ -19,7 +19,9 @@ $OpsDir = Split-Path -Parent $PSCommandPath
 $Root   = Split-Path -Parent $OpsDir
 $Exe    = Join-Path $Root "fleet.exe"
 if (-not (Test-Path $Exe)) { $Exe = Join-Path $Root "dist\fleet.exe" }   # 仓库布局在 dist\，目标机布局在根目录
-$Conf   = Join-Path $Root "runner\runner.json"
+# 2026-10-29：日常全部交给 MAS，Go runner 只跑常驻车道（肉鸽/卫戍）。
+# 主配置 runner.json 已停用（它的 a19/a32 会和 MAS 的 emu23/emu32 撞台）。
+$Conf   = Join-Path $Root "runner\runner.resident.json"
 $Heart  = Join-Path $Root "runner\heartbeat.txt"
 $Log    = Join-Path $OpsDir "boot_runner.log"
 
@@ -51,11 +53,24 @@ if ($running.Count -gt 0) {
   # ② 心跳：主循环 heartbeat.txt + 各肉鸽车道 hb_rogue_*.txt
   #    任一太久没更新 = 卡死（进程活着不干活）→ 杀掉重拉
   $stale = $false; $age = 0.0; $why = ""
+
+  # 当前配置里的账号 id 列表（判断哪些 hb 文件还算数）
+  $accIds = @()
+  if ($c -and $c.accountsFile -and (Test-Path ([string]$c.accountsFile))) {
+    try {
+      $af = Get-Content ([string]$c.accountsFile) -Raw -Encoding UTF8 | ConvertFrom-Json
+      $accIds = @($af.accounts | ForEach-Object { [string]$_.id })
+    } catch { }
+  }
   if (Test-Path $Heart) {
     $age = ((Get-Date) - (Get-Item $Heart).LastWriteTime).TotalMinutes
     if ($age -gt $StaleMin) { $stale = $true; $why = "主循环心跳 " + [math]::Round($age, 1) + " 分钟" }
   }
   Get-ChildItem (Join-Path $Root "runner\hb_rogue_*.txt") -ErrorAction SilentlyContinue | ForEach-Object {
+    # 只认当前配置里真实存在的车道；已删账号留下的旧心跳文件不算
+    # （2026-10-29 事故：a19/a32/lx 三条已停用车道的旧 hb 把 runner 误判成卡死，每 10 分钟杀一次）
+    $laneId = $_.BaseName -replace '^hb_rogue_', ''
+    if ($accIds.Count -gt 0 -and ($accIds -notcontains $laneId)) { return }
     $a = ((Get-Date) - $_.LastWriteTime).TotalMinutes
     if ($a -gt 15) { $stale = $true; $why = $why + " 车道心跳 " + $_.Name + " " + [math]::Round($a, 1) + " 分钟" }
   }

@@ -1,4 +1,5 @@
 # daily_l2.toml — l-2 日服・纯日常（启动前先 am force-stop 关游戏）
+# 2026-10-01 接管 AUTO-MAS 配置：刷智关卡 = PA-6（当期活动关；失效时 worker 自动改刷兜底关 1-7）
 # 用法: maa run daily_l2 -a 127.0.0.1:<本机口>   （MAA_STATE_DIR=state_l2）
 # 顺序（用户定稿 2026-10-01）：唤醒 → 刷理智 → 公招 → 基建 → 信用 → 奖励
 
@@ -30,4 +31,4 @@ params = { visit_friends = true, shopping = true, buy_first = ["招聘许可"], 
 [[tasks]]
 name = "领取奖励"
 type = "Award"
-params = { award = true, mail = true }
+params = { award = true, mail = true, free_gacha = true, orundum = true, mining = true, special_access = true, sign_in_event = true }
