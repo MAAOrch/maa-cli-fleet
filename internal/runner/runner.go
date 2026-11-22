@@ -46,6 +46,7 @@ type Config struct {
 	MaxConcurrent   int      `json:"maxConcurrent"`
 	MinFreeRamMB    int      `json:"minFreeRamMB"`
 	MaxCpuPct       int      `json:"maxCpuPct"`
+	CriticalMB      int      `json:"criticalMB"` // 危险水位（默认 2500）：低于它就完全停止入队
 	AnnDisabled     bool     `json:"annDisabled"`            // true = 这轮先不刷剿灭（不排 ann 任务；state 里旧的也不动）
 	RosterFile      string   `json:"rosterFile,omitempty"`   // 班表文件（默认：state.json 同目录的 roster.json）
 	PlanEarlyMin    *int     `json:"planEarlyMin,omitempty"` // 前瞻排班最多提前多少分钟（默认 120；班表模式设 0 = 班次点发车）
@@ -107,6 +108,9 @@ func New(cfgPath string) (*Runner, error) {
 	if cfg.MaxCpuPct <= 0 {
 		cfg.MaxCpuPct = 85
 	}
+	if cfg.CriticalMB <= 0 {
+		cfg.CriticalMB = 2500
+	}
 	r := &Runner{cfg: cfg, state: &State{Tasks: map[string]*Task{}},
 		running: map[string]bool{}, active: map[string]*Task{}, lanes: map[string]*rogueLane{},
 		executors: NewRegistry(), maaPids: map[string]int{}, httpc: &http.Client{Timeout: 30 * time.Second}}
@@ -118,9 +122,11 @@ func New(cfgPath string) (*Runner, error) {
 		}
 	}
 	if cfg.PiExe != "" {
-		if err := r.executors.Register("pi.demo", newPiExecutor(cfg.PiExe, cfg.LogDir)); err != nil {
+		piEx := newPiExecutor(cfg.PiExe, cfg.LogDir)
+		if err := r.executors.Register("pi.demo", piEx); err != nil {
 			return nil, err
 		}
+		_ = r.executors.Register("pi.*", piEx)
 	}
 
 	if cfg.LogFile != "" {
@@ -528,9 +534,12 @@ func (r *Runner) Run(once bool) {
 	r.Register()
 	if r.MaintenanceOn() {
 		log.Printf("[维护] 维护模式开着（%s）：不派车、不扫模拟器；删掉该文件即恢复", r.maintenancePath())
+		// 启动时就在维护中：把本节点残留的 MAA/模拟器收干净。
+		// 没有这一步，runner 被看门狗重启一次，肉鸽机就又起来了（2026-10-29 实测）。
+		r.shutdownNode()
 	}
 	r.SweepOrphans()
-	r.startResidents() // 常驻任务车道（肉鸽/卫戍协议等，不受并发位限制）
+	r.startResidents() // 常驻任务车道（肉鸽/卫戍协议等，不受并发位限制；维护中会自动跳过）
 	tick := 0
 	for {
 		r.Tick()
@@ -588,14 +597,16 @@ func (r *Runner) Tick() {
 	// 维护模式：人在手工动模拟器（登号/换号/排障）——只入库不派车，也不扫地。
 	if on, flipped := r.maintenanceFlip(); on {
 		if flipped {
-			log.Printf("[维护] 模式开启：暂停派车 + 不扫模拟器（肉鸽车道不受影响），删除 %s 恢复", r.maintenancePath())
+			log.Printf("[维护] 模式开启：暂停派车 + 不扫模拟器 + 关闭本节点的 MAA 与模拟器（删除 %s 恢复）", r.maintenancePath())
+			r.shutdownNode()
 		}
 		if added > 0 {
 			log.Printf("[维护] 新入队 %d 个任务，先存着不跑", added)
 		}
 		return
 	} else if flipped {
-		log.Printf("[维护] 模式关闭：恢复派车与清扫")
+		log.Printf("[维护] 模式关闭：恢复派车与清扫，重启常驻车道")
+		r.startResidents()
 	}
 
 	// 资源闸门：占用过高就停止入队（等在场任务收工、资源回落）

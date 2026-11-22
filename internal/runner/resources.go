@@ -60,7 +60,14 @@ func (r *Runner) CPUPercent() float64 {
 }
 
 // Critical 是否到了危险水位（低于此值主机可能开始抖动/崩）。
-func (r *Runner) Critical(freeMB uint64) bool { return freeMB > 0 && freeMB < 2500 }
+// 阈值可配（criticalMB），默认 2500；多开模拟器的主机按实际内存下调。
+func (r *Runner) Critical(freeMB uint64) bool {
+	lim := r.cfg.CriticalMB
+	if lim <= 0 {
+		lim = 2500
+	}
+	return freeMB > 0 && freeMB < uint64(lim)
+}
 
 // Gated 资源是否紧张到该停止入队。
 func (r *Runner) Gated(freeMB uint64, cpuPct float64) (bool, string) {

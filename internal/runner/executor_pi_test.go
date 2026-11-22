@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -47,6 +48,74 @@ func TestPiExecutorSuccess(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "completed") {
 		t.Fatalf("log = %q, want completed", string(b))
+	}
+}
+
+func TestPiExecutorPerJobConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, "config")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(cfgDir, "maa_pi_config.json")
+	initial := `{
+  "controller": {"name": "Android"},
+  "adb": {"name": "1-MuMuPlayer v5+", "adb_path": "D:/adb.exe", "address": "127.0.0.1:16384"},
+  "resource": "Arknights",
+  "task": [{"name": "收结算页", "option": []}]
+}`
+	if err := os.WriteFile(cfgPath, []byte(initial), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var observed map[string]any
+	e := &piExecutor{
+		exe:    filepath.Join(dir, "MaaPiCli.exe"),
+		dir:    dir,
+		logDir: t.TempDir(),
+		run: func(ctx context.Context, exe string, args []string, d string) ([]byte, error) {
+			raw, err := os.ReadFile(cfgPath)
+			if err != nil {
+				return nil, err
+			}
+			_ = json.Unmarshal(raw, &observed)
+			return []byte("### All tasks have been completed ###\n"), nil
+		},
+	}
+
+	job := Job{
+		Kind:     "pi.event.nav",
+		TaskFile: "进入普通图",
+		Device:   DeviceRef{ADBAddr: "127.0.0.1:16416"},
+		Params:   map[string]any{"adb_name": "2-MuMuPlayer v5+"},
+	}
+	res, err := e.Run(context.Background(), job)
+	if err != nil || !res.OK {
+		t.Fatalf("Run failed: res=%+v err=%v", res, err)
+	}
+	adb, _ := observed["adb"].(map[string]any)
+	if adb["address"] != "127.0.0.1:16416" || adb["name"] != "2-MuMuPlayer v5+" || adb["adb_path"] != "D:/adb.exe" {
+		t.Fatalf("adb config mismatch: %+v", adb)
+	}
+	tasks, _ := observed["task"].([]any)
+	if len(tasks) != 1 || tasks[0].(map[string]any)["name"] != "进入普通图" {
+		t.Fatalf("task config mismatch: %+v", tasks)
+	}
+}
+
+func TestRegistryPrefixMatch(t *testing.T) {
+	reg := NewRegistry()
+	piEx := &piExecutor{exe: "x"}
+	if err := reg.Register("pi.*", piEx); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"pi.demo", "pi.event.nav", "pi.shop"} {
+		if ex, ok := reg.For(kind); !ok || ex != piEx {
+			t.Fatalf("For(%q) = (%v, %v), want piEx", kind, ex, ok)
+		}
+	}
+	if _, ok := reg.For("daily"); ok {
+		t.Fatal("For(daily) should not match pi.*")
 	}
 }
 

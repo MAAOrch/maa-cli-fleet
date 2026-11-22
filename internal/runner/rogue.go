@@ -154,7 +154,12 @@ func residentLabel(task string) string {
 }
 
 // startResidents 给每个常驻账号起一条常驻车道（不受并发位限制：常驻就是常驻）。
+// 维护模式（MAS 队列在跑，本节点必须让出机器）期间不起车道——否则被重启后会立刻抢回模拟器。
 func (r *Runner) startResidents() {
+	if r.MaintenanceOn() {
+		log.Printf("[维护] 维护中，常驻车道暂不启动")
+		return
+	}
 	for i := range r.accounts {
 		a := r.accounts[i]
 		task := a.ResidentTaskFile()
@@ -202,6 +207,8 @@ func (r *Runner) stopResidents() {
 	for _, l := range r.lanes {
 		lanes = append(lanes, l)
 	}
+	// 清空登记表：否则 startLane 幂等检查会把"已停止的车道"当成活的，维护结束后起不来。
+	r.lanes = map[string]*rogueLane{}
 	r.mu.Unlock()
 	for _, l := range lanes {
 		l.setStop(true)

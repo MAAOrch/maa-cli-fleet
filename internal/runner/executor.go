@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/xiachk083-hub/maa-cli-fleet/internal/model"
 )
@@ -73,8 +74,22 @@ func (r *Registry) For(kind string) (Executor, bool) {
 	if r == nil {
 		return nil, false
 	}
-	e, ok := r.m[kind]
-	return e, ok
+	if e, ok := r.m[kind]; ok {
+		return e, true
+	}
+	var best Executor
+	bestLen := -1
+	for k, e := range r.m {
+		if strings.HasSuffix(k, ".*") {
+			prefix := strings.TrimSuffix(k, "*") // 保留末尾 "."
+			if strings.HasPrefix(kind, prefix) && len(prefix) > bestLen {
+				best = e
+				bestLen = len(prefix)
+			}
+		}
+	}
+	return best, best != nil
+
 }
 
 // Kinds 返回已注册的 Kind（排序后，便于启动日志/测试）。

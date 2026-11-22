@@ -3,6 +3,12 @@
 > 2026-10-26 · 状态：**代码骨架已落地；真机 canary 待跑**
 > 关联：`ARCHITECTURE-EXECUTOR.md` §9 Phase 2、`pi/demo/README.md`
 
+> **2026-10-28 更新（真机已跑通）**：MaaEnd 自带的 MaaFw `v5.15.0-beta.1` 的 `MaaPiCli.exe -d`
+> 已在本地 MuMu 跑通 `pi/arknights-smoke`，退出码 0，日志命中 `IsMap`。
+> 关键坑：`config/maa_pi_config.json` 的 `adb.name` 必须等于 `MaaToolkitAdbDeviceFind` 返回的
+> name（本机 `1-MuMuPlayer v5+`），否则 `reconfig_adb` 匹配失败、`config` 传空串，`MaaAdbControlUnitCreate`
+> 报 `Parse config failed` 并 segfault。复现：`pwsh -File pi/arknights-smoke/setup_pi.ps1`。
+
 ---
 
 ## 0. 一句话

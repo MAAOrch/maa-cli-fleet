@@ -14,10 +14,12 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +28,7 @@ import (
 	"github.com/xiachk083-hub/maa-cli-fleet/internal/gen"
 	"github.com/xiachk083-hub/maa-cli-fleet/internal/runner"
 	"github.com/xiachk083-hub/maa-cli-fleet/internal/setup"
+	"github.com/xiachk083-hub/maa-cli-fleet/internal/tutorialwatch"
 )
 
 const version = "0.1.0"
@@ -40,6 +43,16 @@ func main() {
 	args := os.Args[2:]
 
 	switch cmd {
+	case "agent":
+		if err := runAgent(args, root); err != nil {
+			fmt.Fprintln(os.Stderr, "agent 失败：", err)
+			os.Exit(1)
+		}
+	case "watch":
+		if err := runWatch(args, root); err != nil {
+			fmt.Fprintln(os.Stderr, "watch 失败：", err)
+			os.Exit(1)
+		}
 	case "center":
 		addr := flagValue(args, "-addr", "0.0.0.0:8790")
 		_ = addr
@@ -207,6 +220,79 @@ func main() {
 	}
 }
 
+// runWatch 是 fleet 自带的弹窗兜底：观察 adb 设备，左上角教程 [X] 命中才点一下。
+// 匹配不到什么都不做——只做加法，不参与 MAA 的流程。
+func runWatch(args []string, root string) error {
+	adb := flagValue(args, "-adb", defaultAdbPath(root))
+	tplPath := flagValue(args, "-tpl", filepath.Join(root, "runner", "tutorial_tpl_close.png"))
+	stopFile := flagValue(args, "-stop", filepath.Join(root, "runner", "tutorial_watch.stop"))
+	lockPath := flagValue(args, "-lock", filepath.Join(root, "runner", "tutorial_watch.lock"))
+	interval := time.Duration(intFromString(flagValue(args, "-interval-ms", "800"), 800)) * time.Millisecond
+	threshold := floatFromString(flagValue(args, "-threshold", "10"), 10)
+	baseX := intFromString(flagValue(args, "-base-x", "95"), 95)
+	baseY := intFromString(flagValue(args, "-base-y", "85"), 85)
+	tapX := intFromString(flagValue(args, "-tap-x", "152"), 152)
+	tapY := intFromString(flagValue(args, "-tap-y", "109"), 109)
+
+	tpl, err := tutorialwatch.LoadTemplate(tplPath)
+	if err != nil {
+		return fmt.Errorf("加载模板: %w", err)
+	}
+
+	o := &tutorialwatch.Options{
+		Adb: adb, Tpl: tpl, Interval: interval, Threshold: threshold, StopFile: stopFile,
+		BaseX: baseX, BaseY: baseY, TapX: tapX, TapY: tapY,
+		Logf: func(format string, a ...any) {
+			fmt.Printf("[%s] %s\n", time.Now().Format("01-02 15:04:05"), fmt.Sprintf(format, a...))
+		},
+	}
+	if hasFlag(args, "-probe") {
+		return o.Probe(context.Background())
+	}
+
+	lock, ok := tutorialwatch.AcquireLock(lockPath, 2*time.Minute)
+	if !ok {
+		return fmt.Errorf("已有 watcher 在运行（锁 %s）", lockPath)
+	}
+	defer lock.Release()
+
+	go func() {
+		t := time.NewTicker(30 * time.Second)
+		defer t.Stop()
+		for range t.C {
+			lock.Touch()
+		}
+	}()
+	return o.Run(context.Background())
+}
+
+func defaultAdbPath(root string) string {
+	cands := []string{
+		filepath.Join(root, "bin", "adb", "adb.exe"),
+		`C:\Program Files\Netease\MuMu Player 12\nx_main\adb.exe`,
+	}
+	for _, c := range cands {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	return "adb"
+}
+
+func intFromString(s string, def int) int {
+	if v, err := strconv.Atoi(strings.TrimSpace(s)); err == nil {
+		return v
+	}
+	return def
+}
+
+func floatFromString(s string, def float64) float64 {
+	if v, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err == nil {
+		return v
+	}
+	return def
+}
+
 func usage() {
 	fmt.Fprint(os.Stderr, `fleet —— 机队一体化命令行
 
@@ -217,6 +303,10 @@ func usage() {
               [-set-resident <账号>:<任务>]   # 热切换/新开常驻任务（肉鸽、卫戍协议等；-set-rogue 为旧别名）
               [-maintenance on|off|status]   # 维护模式：人在手工登号/排障时用（不派车、不关模拟器）
   fleet gen    [-automas <AUTO-MAS 目录>] [-dry]
+  fleet agent  shot|state|tap|swipe|text|key|copilot|battle ...   # 单次感知/操作
+  fleet agent  battle -config <json> [-dry-run] [-once]           # 独立战斗运行时
+  fleet watch  [-adb <adb>] [-tpl <png>] [-interval-ms 800] [-threshold 10] [-stop <文件>] [-probe]
+               # 弹窗兜底：观察 adb 设备，命中左上角教程 [X] 才点一下；-probe 只打分不点
   fleet version
 
 根目录（自动定位）：exe 所在目录；可用 FLEET_ROOT 覆盖。
