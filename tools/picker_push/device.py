@@ -26,7 +26,9 @@ KNOWN_PACKAGES = [
     "com.YoStarKR.Arknights",            # 韩服
 ]
 
-_SHOT = Path(r"D:\maa-cli-fleet\_tmp\ev")
+# 截图落盘目录：默认放在本仓/worktree 内（双开时主仓与 worktree 各写各的），
+# 可用 PICKER_SHOT_DIR 覆盖。
+_SHOT = Path(os.environ.get("PICKER_SHOT_DIR") or (Path(__file__).resolve().parents[2] / "_tmp" / "ev"))
 _OCR = None
 
 
@@ -107,11 +109,13 @@ def resolve_device(cfg: dict, log=print) -> str:
     if want in online:
         return want
     candidates: list[str] = []
+    # 双开：没显式给实例号就**不猜**（以前默认 0 会悄悄查实例 0 的端口，把 B 会话带偏）
+    emu = str(cfg.get("emu", "") or "").strip()
     mm = os.path.join(os.path.dirname(cfg.get("adb", "")), "MuMuManager.exe")
-    if os.path.exists(mm):
+    if emu and os.path.exists(mm):
         try:
             out = subprocess.run(
-                [mm, "info", "-v", str(cfg.get("emu", "0"))],
+                [mm, "info", "-v", emu],
                 capture_output=True, text=True, timeout=20,
                 encoding="utf-8", errors="replace",
             ).stdout

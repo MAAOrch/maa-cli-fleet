@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -33,9 +34,12 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 from device import ensure_only_client, page_hint, read_sanity, resolve_device  # noqa: E402
-from pi_runner import run_task  # noqa: E402
+from pi_runner import run_task, set_device  # noqa: E402
 
-PROGRESS = Path(r"D:\copilot-picker-local\progress.json")
+# 台账（progress.json）属于 copilot-picker 的**运行根**，不是代码仓：
+# 双开时绝不能写死主运行根（D:\copilot-picker-local），否则 B 会话会改到实例 0 的台账。
+# 优先级：--progress > 事件配置 "progress" > 环境变量 PICKER_PROGRESS；都没给就按空台账跑（只读不写）。
+PROGRESS: Path | None = Path(os.environ["PICKER_PROGRESS"]) if os.environ.get("PICKER_PROGRESS") else None
 TRIED_FILE = HERE / "_tried.json"  # 本轮已经试过、没达标的作业（跨多次运行保留，防反复撞同一份 0★/2★）
 
 # 区域 → PI 任务名
@@ -58,7 +62,7 @@ def load_event(name: str) -> dict:
 
 
 def ledger() -> dict:
-    if not PROGRESS.exists():
+    if PROGRESS is None or not PROGRESS.exists():
         return {}
     try:
         rows = json.loads(PROGRESS.read_text(encoding="utf-8"))
@@ -175,9 +179,36 @@ def main() -> int:
     ap.add_argument("--max-potions", type=int, default=0,
                     help="最多自动用几个理智药补理智（默认 0 = 不嗑药，理智不足就停手）；"
                          "嗑药前必须 OCR 到「理智合剂」确认语，认不到直接停")
+    # 双开隔离：事件配置里写的是某台实例的 api/账号/设备，命令行可整套覆盖。
+    ap.add_argument("--api", default="", help="copilot-picker URL 覆盖（如 http://127.0.0.1:8791）")
+    ap.add_argument("--account", default="", help="账号 id 覆盖（默认取事件配置）")
+    ap.add_argument("--client", default="", help="客户端覆盖（Official/Bilibili/YoStarJP...）")
+    ap.add_argument("--client-package", dest="client_package", default="", help="目标客户端包名覆盖")
+    ap.add_argument("--device", default="", help="adb 地址覆盖，如 127.0.0.1:16416")
+    ap.add_argument("--adb-name", dest="adb_name", default="",
+                    help="MaaToolkit 探测名覆盖，如 2-MuMuPlayer v5+（PI 按名字选设备）")
+    ap.add_argument("--emu", default="", help="MuMu 实例号覆盖（adb 端口漂移时用它问 MuMuManager）")
+    ap.add_argument("--progress", default="", help="台账 progress.json 覆盖（默认事件配置/环境变量）")
     args = ap.parse_args()
 
     cfg = load_event(args.event)
+    for key, val in (
+        ("api", args.api), ("account", args.account), ("client", args.client),
+        ("client_package", args.client_package), ("device", args.device),
+        ("adb_name", args.adb_name), ("emu", args.emu),
+    ):
+        if val:
+            cfg[key] = val
+    global PROGRESS
+    if args.progress:
+        PROGRESS = Path(args.progress)
+    elif cfg.get("progress"):
+        PROGRESS = Path(cfg["progress"])
+    if PROGRESS is None:
+        print("[warn] 未配置台账（--progress / 事件配置 progress / PICKER_PROGRESS）：按空台账跑，不读写 progress.json")
+    else:
+        print(f"[cfg] api={cfg['api']} account={cfg.get('account')} device={cfg.get('device')} progress={PROGRESS}")
+    set_device(address=cfg.get("device", ""), name=cfg.get("adb_name", ""))
     stages_cfg = cfg["stages"]
     if args.stages:
         codes = [s.strip() for s in args.stages.split(",") if s.strip()]
@@ -198,6 +229,9 @@ def main() -> int:
     # （2026-11-22 05:32 官服在前台被 maa startup 误唤醒，白打 3 场）
     try:
         resolve_device(cfg)  # MuMu 重启后 adb 端口会漂，先校正再连
+        # 端口漂移后把解析出的新地址同步给 PI（PI 按设备名匹配，地址也要对）
+        set_device(address=cfg.get("device", ""), name=cfg.get("adb_name", ""))
+        print(f"[cfg] 实际设备 {cfg.get('device')}（PI name={cfg.get('adb_name') or '沿用 setup 配置'}）")
         ensure_only_client(cfg)
     except Exception as e:  # noqa: BLE001
         print(f"[err] 客户端隔离失败：{e}")

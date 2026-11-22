@@ -1,0 +1,50 @@
+{
+  "_comment": "会话 B / 双开隔离专用：同一份 act46side 关卡表，但 api/账号/设备全指向实例 1（picker 8791）。主会话的 act46side.json 保持实例 0 不变。",
+  "event": "act46side",
+  "event_name": "雪山降临1101（复刻）·slot2",
+  "api": "http://127.0.0.1:8791",
+  "account": "local1",
+  "client": "Official",
+  "adb": "D:\\Xiach\\MuMuPlayer\\nx_main\\adb.exe",
+  "adb_name": "2-MuMuPlayer v5+",
+  "emu": "1",
+  "device": "127.0.0.1:16416",
+  "progress": "D:\\copilot-picker-local-2\\progress.json",
+  "client_package": "com.hypergryph.arknights",
+  "other_clients": ["com.hypergryph.arknights.bilibili", "com.YoStarJP.Arknights", "com.YoStarEN.Arknights"],
+  "manual_areas": ["s"],
+  "ui": {
+    "terminal": [980, 265],
+    "event_card": [280, 420]
+  },
+  "areas": {
+    "main": { "name": "圣巡之旅", "hub": [900, 525], "tab": [945, 650], "mode": "normal" },
+    "ex": { "name": "变革之路", "hub": [1040, 525], "tab": [1070, 650], "mode": "raid" },
+    "s": { "name": "喀兰之心", "hub": [1150, 525], "tab": [1191, 650], "mode": "normal" }
+  },
+  "stages": {
+    "OS-1": { "stageName": "act46side_01", "area": "main", "mode": "normal" },
+    "OS-2": { "stageName": "act46side_02", "area": "main", "mode": "normal" },
+    "OS-3": { "stageName": "act46side_03", "area": "main", "mode": "normal" },
+    "OS-4": { "stageName": "act46side_04", "area": "main", "mode": "normal" },
+    "OS-5": { "stageName": "act46side_05", "area": "main", "mode": "normal" },
+    "OS-6": { "stageName": "act46side_06", "area": "main", "mode": "normal" },
+    "OS-7": { "stageName": "act46side_07", "area": "main", "mode": "normal" },
+    "OS-8": { "stageName": "act46side_08", "area": "main", "mode": "normal" },
+    "OS-9": { "stageName": "act46side_09", "area": "main", "mode": "normal" },
+    "OS-10": { "stageName": "act46side_10", "area": "main", "mode": "normal" },
+    "OS-EX-1": { "stageName": "act46side_ex01", "area": "ex", "mode": "raid" },
+    "OS-EX-2": { "stageName": "act46side_ex02", "area": "ex", "mode": "raid" },
+    "OS-EX-3": { "stageName": "act46side_ex03", "area": "ex", "mode": "raid" },
+    "OS-EX-4": { "stageName": "act46side_ex04", "area": "ex", "mode": "raid" },
+    "OS-EX-5": { "stageName": "act46side_ex05", "area": "ex", "mode": "raid" },
+    "OS-EX-6": { "stageName": "act46side_ex06", "area": "ex", "mode": "raid" },
+    "OS-EX-7": { "stageName": "act46side_ex07", "area": "ex", "mode": "raid" },
+    "OS-EX-8": { "stageName": "act46side_ex08", "area": "ex", "mode": "raid" },
+    "OS-S-1": { "stageName": "act46side_s01", "area": "s", "mode": "normal" },
+    "OS-S-2": { "stageName": "act46side_s02", "area": "s", "mode": "normal" },
+    "OS-S-3": { "stageName": "act46side_s03", "area": "s", "mode": "normal" },
+    "OS-S-4": { "stageName": "act46side_s04", "area": "s", "mode": "normal" },
+    "OS-S-5": { "stageName": "act46side_s05", "area": "s", "mode": "normal" }
+  }
+}
