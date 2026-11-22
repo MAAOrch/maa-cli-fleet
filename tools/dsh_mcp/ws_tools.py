@@ -57,9 +57,9 @@ _GIT_REDIRECT_OPTS = (
     "-C", "-c", "--git-dir", "--work-tree", "--exec-path",
     "--namespace", "--config-env", "--super-prefix", "--attr-source",
 )
-# 破坏性 / 远端写子命令。
+# 破坏性子命令（push 放行普通快进推送，强推/删分支在 _check_git 里单独拦截）。
 _GIT_BLOCKED_SUBCOMMANDS = frozenset({
-    "push", "clean", "filter-branch", "filter-repo", "send-email", "svn",
+    "clean", "filter-branch", "filter-repo", "send-email", "svn",
 })
 _GIT_REMOTE_MUTATIONS = frozenset({
     "add", "remove", "rm", "rename", "set-url", "set-head",
@@ -267,6 +267,16 @@ def _check_git(args: list[str]) -> None:
 
     if sub in _GIT_BLOCKED_SUBCOMMANDS:
         raise ValueError("拒绝危险 git 子命令：%s" % sub)
+    if sub == "push":
+        rest = args[sub_idx + 1:]
+        for a in rest:
+            al = a.lower()
+            if (al in ("-f", "--force", "--force-with-lease", "--force-if-includes",
+                       "-d", "--delete", "--mirror", "--prune")
+                    or al.startswith("--force-with-lease=")):
+                raise ValueError("拒绝危险 git push 选项：%s" % a)
+            if not a.startswith("-") and (a.startswith("+") or a.startswith(":")):
+                raise ValueError("拒绝强推或删除远端分支的 refspec：%s" % a)
     if sub == "reset" and "--hard" in lower_args:
         raise ValueError("拒绝危险 git 子命令：reset --hard")
     if sub in ("checkout", "switch") and any(a in ("-f", "--force") for a in lower_args):
