@@ -121,6 +121,7 @@ func New(cfgPath string) (*Runner, error) {
 		if err := r.executors.Register("pi.", newPiExecutor(cfg.PiExe, cfg.LogDir)); err != nil {
 			return nil, err
 		}
+		LogPiProjects()
 	}
 
 	if cfg.LogFile != "" {

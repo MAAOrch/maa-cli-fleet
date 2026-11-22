@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -210,4 +211,67 @@ func loadPiResource(project string) string {
 		}
 	}
 	return ""
+}
+
+// PiProject 描述一个可用的 PI 项目。
+type PiProject struct {
+	Name     string
+	Resource string
+	Entries  []string
+}
+
+// ScanPiProjects 扫描工作区 pi/ 目录，返回带 interface.json 的项目及其 entry。
+func ScanPiProjects() []PiProject {
+	var out []PiProject
+	root := "pi"
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return out
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		ifacePath := filepath.Join(root, name, "interface.json")
+		b, err := os.ReadFile(ifacePath)
+		if err != nil {
+			continue
+		}
+		var iface struct {
+			Resource []struct {
+				Name string `json:"name"`
+			} `json:"resource"`
+			Task []struct {
+				Name string `json:"name"`
+			} `json:"task"`
+		}
+		if err := json.Unmarshal(b, &iface); err != nil {
+			continue
+		}
+		res := ""
+		if len(iface.Resource) > 0 {
+			res = iface.Resource[0].Name
+		}
+		var tasks []string
+		for _, t := range iface.Task {
+			if t.Name != "" {
+				tasks = append(tasks, t.Name)
+			}
+		}
+		out = append(out, PiProject{Name: name, Resource: res, Entries: tasks})
+	}
+	return out
+}
+
+// LogPiProjects 启动时打印发现的 PI 项目。
+func LogPiProjects() {
+	projects := ScanPiProjects()
+	if len(projects) == 0 {
+		log.Println("[pi] 未发现 pi/ 下的项目")
+		return
+	}
+	for _, p := range projects {
+		log.Printf("[pi] project=%s resource=%s entries=%d %v", p.Name, p.Resource, len(p.Entries), p.Entries)
+	}
 }

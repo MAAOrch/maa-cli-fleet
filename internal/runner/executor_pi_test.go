@@ -169,3 +169,23 @@ func TestLoadPiResource(t *testing.T) {
 		t.Fatalf("unknown project should return empty, got %q", got)
 	}
 }
+
+func TestScanPiProjects(t *testing.T) {
+	projects := ScanPiProjects()
+	if len(projects) == 0 {
+		t.Log("no pi projects in workspace (ok for CI)")
+		return
+	}
+	found := false
+	for _, p := range projects {
+		if p.Name == "demo" || p.Name == "arknights-event" {
+			found = true
+			if len(p.Entries) == 0 {
+				t.Errorf("project %s has no entries", p.Name)
+			}
+		}
+	}
+	if !found {
+		t.Logf("scanned %d projects, none of the expected ones", len(projects))
+	}
+}
