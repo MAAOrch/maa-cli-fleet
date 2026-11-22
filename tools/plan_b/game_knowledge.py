@@ -72,3 +72,41 @@ def inject_knowledge(stage_code: str = "", raid: bool = False) -> str:
     if raid:
         parts.append("当前是**突袭**模式。普通过了也不代表突袭能过，阻挡和输出都要留余量。")
     return "\n\n".join(parts)
+
+
+# 干员职业到角色的粗分类（用于提示词优先推荐）
+OPERATOR_ROLES = {
+    "先锋": "回费",
+    "重装": "阻挡",
+    "近卫": "输出/阻挡",
+    "狙击": "输出",
+    "术师": "输出",
+    "医疗": "治疗",
+    "辅助": "辅助",
+    "特种": "特殊",
+}
+
+def classify_roster(entries: list[dict]) -> dict[str, list[str]]:
+    """把名册按角色分类。entries 需有 name 和 class/职业 字段。"""
+    roles: dict[str, list[str]] = {}
+    for e in entries:
+        name = e.get("name") or e.get("charId") or ""
+        cls = e.get("class") or e.get("profession") or ""
+        role = OPERATOR_ROLES.get(cls, "其他")
+        roles.setdefault(role, []).append(name)
+    return roles
+
+def roster_prompt(entries: list[dict]) -> str:
+    """生成干员角色分类提示段落。"""
+    roles = classify_roster(entries)
+    if not roles:
+        return "## 干员角色\n（名册为空）"
+    lines = ["## 干员角色分类（改轴时优先选择）", ""]
+    order = ["回费", "阻挡", "输出/阻挡", "输出", "治疗", "辅助", "特殊", "其他"]
+    for role in order:
+        names = roles.get(role)
+        if names:
+            lines.append(f"- **{role}**：{', '.join(names[:12])}" + (f" …+{len(names)-12}" if len(names) > 12 else ""))
+    lines.append("")
+    lines.append("建议：开场用 1-2 名回费，入口放 1-2 名阻挡，后排放输出，危险点补治疗。")
+    return "\n".join(lines)
