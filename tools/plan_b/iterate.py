@@ -60,7 +60,9 @@ def enter_drill(code: str, raid: bool) -> bool:
     if "-S-" not in code:
         raise SystemExit("Plan B Phase 1 只支持 S 关（EX/主线入口还没做演习链）")
     n = code.rsplit("-", 1)[-1]
-    steps = ["收结算页", "进入S图", f"进入S-{n}详情"]
+    # 第一步「收结算页」只是归位，失败不算致命（常在结算/地图页上失败但状态已可用）
+    run_task("收结算页", timeout=180)
+    steps = ["进入S图", f"进入S-{n}详情"]
     if raid:
         steps.append("切突袭模式")
     steps.append("进入演习")
@@ -83,7 +85,18 @@ def run_round(bundle: pathlib.Path, ctx: dict, candidate: pathlib.Path, args) ->
 
     event = load_event(args.event)
     device = event.get("device", "127.0.0.1:16384")
-    observer = obs.BattleObserver(device, round_dir, interval=args.poll_interval)
+    run_holder: dict = {"id": ""}
+
+    def _stop_run():
+        if run_holder.get("id"):
+            try:
+                _post(args.picker, f"/api/run/{run_holder['id']}/stop", {})
+                print("[planb] 熔断：已请求中止本局（省掉无效等待）")
+            except Exception as e:  # noqa: BLE001
+                print(f"[planb] 熔断请求失败：{e}")
+
+    observer = obs.BattleObserver(device, round_dir, interval=args.poll_interval,
+                                  early_stop=not args.no_early_stop, stop_cb=_stop_run)
     observer.start()
     try:
         r = _post(args.picker, "/api/run/start", {
@@ -100,7 +113,8 @@ def run_round(bundle: pathlib.Path, ctx: dict, candidate: pathlib.Path, args) ->
             "noProgress": True,
         })
         run_id = r["runId"]
-        print(f"[planb] 演习 run={run_id}（观察中…）")
+        run_holder["id"] = run_id
+        print(f"[planb] 演习 run={run_id}（白盒观察中，{args.poll_interval}s/帧，raw 帧低开销采样…）")
         deadline = time.time() + args.timeout_min * 60 + 300
         status = "?"
         while time.time() < deadline:
@@ -114,13 +128,34 @@ def run_round(bundle: pathlib.Path, ctx: dict, candidate: pathlib.Path, args) ->
         observer.join(timeout=20)
 
     run_dir = pathlib.Path(event.get("runsDir") or r"D:\copilot-picker-local\runs") / run_id
-    report = obs.build_report(run_dir, observer.timeline)
+    report = obs.build_report(run_dir, observer.timeline, observer=observer)
     report["candidate"] = str(round_dir / "candidate.json")
     report["round"] = args._round
+    report["earlyStop"] = bool(observer.incidents)
     (round_dir / "battle_report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if report.get("stars") != 3 and not report.get("contactSheets"):
+        sheet = observer.save_final_sheet(tag=f"final_round{args._round:02d}")
+        if sheet:
+            report["contactSheets"] = observer.contact_sheets
+            (round_dir / "battle_report.json").write_text(
+                json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    perf = report.get("perf") or {}
     print(f"[planb] 结算：stars={report['stars']}（{report['starsReason']}）"
           f" result={report['result']} maxKills={report['maxKills']}")
+    if perf:
+        print(f"[planb] 采样性能：{perf.get('frames')} 帧 avg={perf.get('avg_ms')}ms "
+              f"p95={perf.get('p95_ms')}ms max={perf.get('max_ms')}ms（interval={args.poll_interval}s）")
+    if report.get("incidents"):
+        print("[planb] 熔断/事故：" + "; ".join(f"{i['kind']}@{i['elapsed']}s" for i in report["incidents"]))
+    at = report.get("action_trace") or {}
+    print(f"[planb] 实际落地：{at.get('deployed_opers')}")
+    print(f"[planb] 最后成功动作：{(at.get('last_ok_action') or {}).get('action')} "
+          f"{(at.get('last_ok_action') or {}).get('target')}；"
+          f"卡住/失败：{(at.get('stuck_or_failed_action') or {}).get('action')} "
+          f"{(at.get('stuck_or_failed_action') or {}).get('target')}")
+    if report.get("contactSheets"):
+        print("[planb] 九宫格分镜：" + "; ".join(report["contactSheets"]))
     return report
 
 
@@ -146,7 +181,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--rounds", type=int, default=1)
     ap.add_argument("--picker", default=DEFAULT_PICKER)
     ap.add_argument("--timeout-min", type=int, default=15)
-    ap.add_argument("--poll-interval", type=float, default=12.0)
+    ap.add_argument("--poll-interval", type=float, default=1.8,
+                    help="采样间隔秒（默认 1.8，白盒模式）")
+    ap.add_argument("--no-early-stop", action="store_true",
+                    help="关闭演习熔断（默认开启：蓝门掉血/99费停滞 25s 即中止本局）")
     ap.add_argument("--skip-validate", action="store_true")
     ap.add_argument("--dry-run", action="store_true", help="只校验+打印流程，不进游戏")
     args = ap.parse_args(argv)
@@ -188,9 +226,13 @@ def main(argv: list[str] | None = None) -> int:
               "picker 演练 candidate → 观察 → 战报")
         return 0
 
+    # 轮次目录续编号：已有 round-NN 就从 NN+1 开始，避免覆盖历史战报
+    existing = [int(d.name.split("-")[1]) for d in (bundle / "rounds").glob("round-*")
+                if d.name.split("-")[1].isdigit()] if (bundle / "rounds").exists() else []
+    base_round = max(existing) if existing else 0
     last = None
     for i in range(1, args.rounds + 1):
-        args._round = i
+        args._round = base_round + i
         last = run_round(bundle, ctx, cand, args)
         if last.get("stars") == 3:
             print("[planb] 演习 3★！可以切真理智正式打（Phase 2 会接自动正式打）")

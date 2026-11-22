@@ -1,19 +1,26 @@
 # -*- coding: utf-8 -*-
-"""Plan B：战斗战报采集。
+"""Plan B：白盒战斗观测（高频轻量采样 + 事故九宫格 + action_trace）。
 
-两部分：
-1. `BattleObserver`：演习/正式打期间后台轮询（默认 12s 一帧，只读截图，不碰触控），
-   记录击杀数/费用时间线，在「击杀数新高 / 蓝门掉血 / 战斗结束」时保存关键帧。
-2. `build_report`：跑完后把 run 目录（settle.png、events.log）、MAA asst.log（按启动
-   时间戳过滤）和时间线汇总成 `battle_report.json`。
+设计目标（2026-11-22 用户要求）：
+  1. 每 1.5~2.0s 采一帧，**只进内存环形缓冲**（deque，保留最近 ~20s），不逐帧落盘；
+  2. 采样时只对顶部/右下几个**极小 ROI** 做 OCR（击杀数/费用/蓝门生命），不跑全图 OCR，
+     避免拖慢模拟器或干扰 MaaCore 触控；
+  3. 命中异常（蓝门掉血 / 任务失败页 / 99费且击杀停滞25s / 结算<3★）时，把出事前最近
+     9 帧拼成 3×3 九宫格分镜图（1920 宽 JPEG），每格叠加
+     `[#n T-XXs | kills=XX/58 | cost=XX | life=X]` 标注；
+  4. 演习模式默认 `--early-stop`：确认异常（战斗≥20s 且连续 2 帧命中同一异常）后先落盘分镜图，
+     再中止本局（省掉后面 2~3 分钟无效等待），由 iterate.py 负责退出演习回主界面；
+  5. 结束后把 asst.log 的 Copilot 动作轨迹整理成 `action_trace`（含成功部署列表、
+     最后成功动作、卡住/失败动作）。
 
-用法（对已有 run 离线出战报，便于调参）：
-  python tools/plan_b/battle_observer.py --run D:\\copilot-picker-local\\runs\\<id> --out report.json
+用法（对已有 run 离线出战报）：
+  python tools/plan_b/battle_observer.py --run <run目录> [--out report.json]
 """
 
 from __future__ import annotations
 
 import argparse
+import collections
 import json
 import pathlib
 import re
@@ -30,6 +37,7 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_RUNS = pathlib.Path(r"D:\copilot-picker-local\runs")
 MAA_LOG = pathlib.Path(r"D:\copilot-picker-local\data_copilot\maa_state\debug\asst.log")
 ADB = r"D:\Xiach\MuMuPlayer\nx_main\adb.exe"
+PI_IMG = REPO / "pi" / "arknights-event" / "resource" / "image" / "EventNav"
 
 _OCR = None
 
@@ -43,21 +51,6 @@ def _ocr():
     return _OCR
 
 
-def _shot(device: str, dst: pathlib.Path) -> bool:
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with dst.open("wb") as f:
-            subprocess.run([ADB, "-s", device, "exec-out", "screencap", "-p"], stdout=f,
-                           stderr=subprocess.DEVNULL, timeout=20)
-        return dst.exists() and dst.stat().st_size > 10_000
-    except Exception:  # noqa: BLE001
-        return False
-
-
-_KILL_RE = re.compile(r"(\d{1,3})\s*/\s*(\d{1,3})")
-_NUM_RE = re.compile(r"\b(\d{1,3})\b")
-
-
 def _ocr_text(img) -> list[tuple[str, int, int, int, int]]:
     res, _ = _ocr()(img)
     out = []
@@ -69,75 +62,204 @@ def _ocr_text(img) -> list[tuple[str, int, int, int, int]]:
     return out
 
 
-def _read_battle_hud(img) -> dict:
-    """读战斗 HUD（分区域裁剪后 OCR，比整屏识准得多）。
+_KILL_RE = re.compile(r"(\d{1,3})\s*/\s*(\d{1,3})")
+_NUM_RE = re.compile(r"\b(\d{1,3})\b")
 
-    区域（1280x720 战斗界面实测）：
-      击杀 24/58  → 顶部中右 [780..1280, 0..120]
-      生命 5000/5000 → 左侧中 [260..560, 440..540]
-      费用 54     → 右下 [980..1280, 500..720]
-      演习中横幅  → 顶部中 [480..800, 30..90]
+_FAIL_TEMPLATES: list[np.ndarray] = []
+
+
+def _fail_template():
+    global _FAIL_TEMPLATES
+    if not _FAIL_TEMPLATES:
+        p = PI_IMG / "result_fail.png"
+        t = cv2.imread(str(p)) if p.exists() else None
+        if t is not None:
+            _FAIL_TEMPLATES.append(t)
+    return _FAIL_TEMPLATES[0] if _FAIL_TEMPLATES else None
+
+
+def _shot_raw(device: str, timeout: float = 10.0):
+    """`adb exec-out screencap` 原始帧（RGBA），比 `-p` 的 PNG 快一个数量级。
+
+    实测 `screencap -p` 单帧 ~3.4s（设备端 PNG 编码 + 管道传输），这是之前"白盒采样
+    把模拟器拖慢、MAA 超时"的元凶。原始帧只需传输+解码，单帧 ~0.4s。
+    """
+    try:
+        p = subprocess.run([ADB, "-s", device, "exec-out", "screencap"],
+                           capture_output=True, timeout=timeout)
+    except Exception:  # noqa: BLE001
+        return None
+    data = p.stdout
+    if not data or len(data) < 16:
+        return None
+    import struct
+    w, h = struct.unpack_from("<II", data, 0)
+    if w <= 0 or h <= 0 or len(data) < 12 + w * h * 4:
+        return None
+    arr = np.frombuffer(data, dtype=np.uint8, count=w * h * 4, offset=12).reshape(h, w, 4)
+    return arr[:, :, :3].copy()
+
+
+def _shot_bytes(device: str, timeout: float = 15.0) -> bytes | None:
+    try:
+        p = subprocess.run([ADB, "-s", device, "exec-out", "screencap", "-p"],
+                           capture_output=True, timeout=timeout)
+        if p.returncode == 0 and len(p.stdout) > 10_000:
+            return p.stdout
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def _decode(data: bytes):
+    arr = np.frombuffer(data, dtype=np.uint8)
+    return cv2.imdecode(arr, cv2.IMREAD_COLOR)
+
+
+def read_hud(img, life_roi_hint=None) -> dict:
+    """轻量 HUD 读取：只 OCR 三个极小 ROI（击杀 / 蓝门生命 / 费用）。
+
+    实测坐标（1280x720 战斗界面）：
+      击杀 24/58   x 540-620, y 15-50
+      蓝门生命 1   x 740-780, y 20-45
+      费用 54      x 1060-1120, y 540-600
     """
     out: dict = {}
-    if img is None or img.shape[0] < 700:
+    if img is None or img.shape[0] < 600:
         return out
 
-    def _up(roi, fx=2.0):
+    def _up(roi, fx=3.0):
         return cv2.resize(roi, None, fx=fx, fy=fx, interpolation=cv2.INTER_CUBIC)
 
-    # 击杀 24/58：顶部中偏左（实测 x≈540-620, y≈15-50）
-    for text, *_b in _ocr_text(_up(img[0:90, 380:820])):
+    for text, *_b in _ocr_text(_up(img[8:60, 500:680], 2.5)):
         m = _KILL_RE.search(text)
         if m:
             out["kills"] = int(m.group(1))
             out["kills_total"] = int(m.group(2))
             break
-    # 生命（保护目标剩余）：顶部偏右，心形图标旁的小数字（实测 x≈740-780, y≈20-45）
-    for text, *_b in _ocr_text(_up(img[0:60, 700:820], 3.0)):
+    for text, *_b in _ocr_text(_up(img[8:60, 720:800], 3.0)):
         if _NUM_RE.fullmatch(text):
             v = int(text)
             if 0 <= v <= 99:
                 out["life"] = v
                 break
-    # 费用：右下角大数字
-    for text, *_b in _ocr_text(img[500:720, 980:1280]):
+    for text, *_b in _ocr_text(_up(img[520:620, 1040:1200], 2.5)):
         if _NUM_RE.fullmatch(text):
             v = int(text)
             if 0 <= v <= 99:
                 out["cost"] = v
                 break
-    # 演习横幅（顶部中：演习中）
-    banner = "".join(t for t, *_b in _ocr_text(_up(img[30:90, 520:800])))
-    if "演习" in banner:
-        out["drill"] = True
     return out
 
 
-def detect_stars(settle_png: pathlib.Path) -> dict:
-    """从结算截图判星（与 picker 的判定口径对齐）。
+_KILLS_CROP = (8, 60, 500, 680)   # y0,y1,x0,x1
+_LIFE_CROP = (8, 60, 720, 800)
+_COST_CROP = (520, 620, 1040, 1200)
+_cost99_tpl = None
 
-    - 任务失败页 → 0 星
-    - 活动徽章结算（单个大白色六边形）→ 3 星（picker 的 themed 口径）
-    - 普通结算页：数左边三颗六角星里亮起的青色数量
+
+def _cost99_template(np_img=None):
+    """费用 99 的模板（从真实战斗帧裁一次，之后模板匹配判断是否满费）。"""
+    global _cost99_tpl
+    if _cost99_tpl is None and np_img is not None:
+        _cost99_tpl = np_img[_COST_CROP[0]:_COST_CROP[1], _COST_CROP[2]:_COST_CROP[3]].copy()
+    return _cost99_tpl
+
+
+class FastHud:
+    """轻量 HUD：每帧只做像素哈希 + 模板匹配（毫秒级），OCR 低频兜底。
+
+    为什么不用 OCR：实测 RapidOCR 单次 1.2~4.5s，1.8s 采样根本跑不动，还会拖慢本机。
+    这里只判「击杀数变没变 / 是否满费 99 / 是否任务失败页」，数值标签用低频 OCR 的值。
     """
+
+    def __init__(self, fail_tpl):
+        self.fail_tpl = fail_tpl
+        self.kills_hash: int | None = None
+        self.kills_value: int | None = None
+        self.kills_total: int | None = None
+        self.life: int | None = None
+        self.cost: int | None = None
+        self.last_kills_change = 0.0
+        self.cost99_since: float | None = None
+        self._cost99_ref = None
+        self.fail_streak = 0
+
+    @staticmethod
+    def _h(img) -> int:
+        # 只对 kills 小 ROI 做 8x8 均值哈希（字节哈希，够稳够快）
+        c = img[_KILLS_CROP[0]:_KILLS_CROP[1], _KILLS_CROP[2]:_KILLS_CROP[3]]
+        g = cv2.cvtColor(c, cv2.COLOR_BGR2GRAY)
+        small = cv2.resize(g, (8, 8), interpolation=cv2.INTER_AREA)
+        return hash(small.tobytes())
+
+    def cost_is_99(self, img) -> bool:
+        global _cost99_tpl
+        if self.cost99_since is None:
+            return False
+        if _cost99_tpl is None:
+            return self.cost == 99
+        c = img[_COST_CROP[0]:_COST_CROP[1], _COST_CROP[2]:_COST_CROP[3]]
+        if c.shape != _cost99_tpl.shape:
+            return False
+        r = cv2.matchTemplate(c, _cost99_tpl, cv2.TM_CCOEFF_NORMED)
+        return float(r.max()) >= 0.85
+
+    def is_fail_page(self, img) -> bool:
+        if self.fail_tpl is None:
+            return False
+        big = cv2.resize(img, None, fx=0.5, fy=0.5)
+        r = cv2.matchTemplate(big, self.fail_tpl, cv2.TM_CCOEFF_NORMED)
+        return float(r.max()) >= 0.75
+
+    def update(self, img, now: float) -> dict:
+        h = self._h(img)
+        changed = self.kills_hash is not None and h != self.kills_hash
+        if self.kills_hash is None or changed:
+            self.kills_hash = h
+            if changed:
+                self.last_kills_change = now
+        return {"kills_changed": changed}
+
+    def refresh_labels(self, img, now: float) -> dict:
+        """低频 OCR：把当前击杀/生命/费用数值补上（用于分镜标注）。"""
+        hud = read_hud(img)
+        if hud.get("kills") is not None:
+            if hud["kills"] != self.kills_value:
+                self.last_kills_change = now
+            self.kills_value = hud["kills"]
+            self.kills_total = hud.get("kills_total")
+        if hud.get("life") is not None:
+            self.life = hud["life"]
+        if hud.get("cost") is not None:
+            self.cost = hud["cost"]
+            if hud["cost"] == 99 and self.cost99_since is None:
+                self.cost99_since = now
+                global _cost99_tpl
+                if _cost99_tpl is None:
+                    _cost99_tpl = img[_COST_CROP[0]:_COST_CROP[1], _COST_CROP[2]:_COST_CROP[3]].copy()
+            elif hud["cost"] != 99:
+                self.cost99_since = None
+        return {"kills": self.kills_value, "kills_total": self.kills_total,
+                "life": self.life, "cost": self.cost}
+
+
+def detect_stars(settle_png: pathlib.Path) -> dict:
+    """结算图判星（与 picker 口径一致）：失败页 0；活动徽章 3；普通结算数亮星。"""
     img = cv2.imread(str(settle_png))
     if img is None:
         return {"stars": None, "reason": "结算图读不到"}
-    h, w = img.shape[:2]
     res, _ = _ocr()(img)
     text = "".join(str(it[1]) for it in (res or []))
     if "任务失败" in text or "MISSION FAILED" in text.upper():
         return {"stars": 0, "reason": "任务失败页"}
-
     roi = img[280:390, 50:260]
     hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    # 亮青色（三星徽章点亮色）
     cyan = cv2.inRange(hsv, (80, 80, 150), (105, 255, 255))
     n, _lab, stats, _c = cv2.connectedComponentsWithStats(cyan, 8)
     blobs = [int(stats[i, cv2.CC_STAT_AREA]) for i in range(1, n) if stats[i, cv2.CC_STAT_AREA] > 300]
     if blobs:
         return {"stars": min(len(blobs), 3), "reason": f"数到 {len(blobs)} 颗亮星"}
-    # 活动徽章：大面积白色
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
     white = cv2.inRange(gray, 200, 255)
     n2, _l2, st2, _c2 = cv2.connectedComponentsWithStats(white, 8)
@@ -147,64 +269,282 @@ def detect_stars(settle_png: pathlib.Path) -> dict:
     return {"stars": None, "reason": "认不出星数（既不是失败页也不是常见结算样式）"}
 
 
-class BattleObserver(threading.Thread):
-    """战斗期间轮询截图 + 记 HUD 时间线 + 关键帧。"""
+def _annotate(img, text: str, scale: float = 0.5):
+    """左上角半透明黑底 + 白字（只用 ASCII，cv2 不带中文字体）。"""
+    out = img.copy()
+    (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, 1)
+    overlay = out.copy()
+    cv2.rectangle(overlay, (0, 0), (tw + 12, th + 10), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.55, out, 0.45, 0, out)
+    cv2.putText(out, text, (6, th + 6), cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), 1, cv2.LINE_AA)
+    return out
 
-    def __init__(self, device: str, out_dir: pathlib.Path, interval: float = 12.0):
+
+def make_contact_sheet(frames: list[dict], out_path: pathlib.Path, incident_t: float,
+                       cell_w: int = 640, cell_h: int = 360, refresh_hud: bool = False) -> str:
+    """3×3 九宫格分镜图：每格 [编号 T-XXs | kills/cost/life] 标注。
+
+    refresh_hud=True 时会对选中的帧重新 OCR 击杀数（低频 OCR 存的值可能滞后，
+    分镜要的是"那一刻"的数字，误差太大就失去复盘意义）。
+    """
+    if not frames:
+        return ""
+    canvas = np.full((cell_h * 3, cell_w * 3, 3), 20, dtype=np.uint8)
+    for i, fr in enumerate(frames[-9:]):
+        img = fr["img"]
+        if img is None:
+            continue
+        cell = cv2.resize(img, (cell_w, cell_h), interpolation=cv2.INTER_AREA)
+        hud = dict(fr.get("hud") or {})
+        if refresh_hud:
+            full = fr.get("full")
+            if full is not None:
+                fresh = read_hud(full)
+                for k in ("kills", "kills_total", "life", "cost"):
+                    if fresh.get(k) is not None:
+                        hud[k] = fresh[k]
+        t_off = int(round(incident_t - fr.get("t", incident_t)))
+        label = (f"#{i + 1} T-{t_off:02d}s | kills={hud.get('kills', '?')}/{hud.get('kills_total', '?')}"
+                 f" | cost={hud.get('cost', '?')} | life={hud.get('life', '?')}")
+        cell = _annotate(cell, label, 0.52)
+        r, c = divmod(i, 3)
+        canvas[r * cell_h:(r + 1) * cell_h, c * cell_w:(c + 1) * cell_w] = cell
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    ok, enc = cv2.imencode(".jpg", canvas, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+    if ok:
+        out_path.write_bytes(enc.tobytes())
+        return str(out_path)
+    return ""
+
+
+class BattleObserver(threading.Thread):
+    """高频轻量采样 + 环形缓冲 + 异常熔断。"""
+
+    def __init__(self, device: str, out_dir: pathlib.Path, interval: float = 1.8,
+                 ring: int = 12, early_stop: bool = False, stop_cb=None,
+                 battle_min_confirm: float = 20.0, stall_secs: float = 25.0):
         super().__init__(daemon=True)
         self.device = device
-        self.frames = out_dir / "frames"
-        self.tmp = out_dir / "tmp"
-        self.frames.mkdir(parents=True, exist_ok=True)
-        self.tmp.mkdir(parents=True, exist_ok=True)
+        self.out_dir = out_dir
         self.interval = interval
-        self.timeline: list[dict] = []
+        self.buf: collections.deque = collections.deque(maxlen=ring)
+        self.early_stop = early_stop
+        self.stop_cb = stop_cb
+        self.battle_min_confirm = battle_min_confirm
+        self.stall_secs = stall_secs
         self.stop_flag = threading.Event()
-        self._best_kills = -1
-        self._last_key_t = 0.0
+        self.timeline: list[dict] = []
+        self.perf: list[float] = []
+        self.battle_start: float | None = None
+        self.initial_life: int | None = None
+        self.initial_kills_total: int | None = None
+        self.last_kills_change = 0.0
+        self._last_kills: int | None = None
+        self._anomaly_streak: dict[str, int] = {}
+        self.incidents: list[dict] = []
+        self.contact_sheets: list[str] = []
+        self.stars_at_end: int | None = None
+        self.picker = ""
+        self.run_id = ""
 
-    def _save_frame(self, src: pathlib.Path, tag: str) -> str:
-        dst = self.frames / f"{int(time.time())}-{tag}.png"
-        try:
-            dst.write_bytes(src.read_bytes())
-        except Exception:  # noqa: BLE001
-            return ""
-        return str(dst)
+    # ── 内部 ──
+    def bind_run(self, picker: str, run_id: str) -> None:
+        """绑定 picker run：采样改用 /api/run/<id>/shot（MaaCore 自己截的帧，零额外 adb 负载）。
 
+        为什么：1.8s 一次的 `adb exec-out screencap` 会和 MaaCore 抢 adb（实测单帧 3.4s、
+        MAA 识别超时 → 任务链报错）。改用 picker 缓存的截图后对 MAA 完全无干扰。
+        """
+        self.picker = picker.rstrip("/")
+        self.run_id = run_id
+
+    def _grab(self):
+        """返回 BGR 图像：优先 raw screencap（无 PNG 编解码）。"""
+        img = _shot_raw(self.device)
+        if img is not None:
+            return img
+        data = _shot_bytes(self.device)
+        return _decode(data) if data else None
+
+    def _battle_elapsed(self) -> float:
+        return (time.time() - self.battle_start) if self.battle_start else 0.0
+
+    def _confirm(self, kind: str, hit: bool, now: float) -> bool:
+        """连续 2 帧命中同一异常才算确认（防加载黑屏/单帧 OCR 抖动误熔断）。"""
+        streak = self._anomaly_streak.get(kind, 0)
+        streak = streak + 1 if hit else 0
+        self._anomaly_streak[kind] = streak
+        return hit and streak >= 2 and self._battle_elapsed() >= self.battle_min_confirm
+
+    def _fire_incident(self, kind: str, now: float, drop: bool) -> None:
+        frames = list(self.buf)
+        hud = (frames[-1].get("hud") if frames else None) or {}
+        sheet = make_contact_sheet(frames, self.out_dir / f"incident_{kind}_{int(now)}.jpg", now,
+                                  refresh_hud=True)
+        if sheet:
+            self.contact_sheets.append(sheet)
+        self.incidents.append({"kind": kind, "at": round(now, 1), "elapsed": round(self._battle_elapsed(), 1),
+                               "hud": hud, "sheet": sheet})
+        if drop and self.early_stop and self.stop_cb:
+            try:
+                self.stop_cb()
+            except Exception:  # noqa: BLE001
+                pass
+            self.stop_flag.set()
+
+    # ── 主循环 ──
     def run(self) -> None:
+        fail_tpl = _fail_template()
+        fast = FastHud(fail_tpl)
         i = 0
         while not self.stop_flag.is_set():
             i += 1
-            p = self.tmp / f"poll-{i}.png"
-            if not _shot(self.device, p):
-                time.sleep(self.interval)
-                continue
-            img = cv2.imread(str(p))
+            t0 = time.time()
+            img = self._grab()
             if img is None:
                 time.sleep(self.interval)
                 continue
-            hud = _read_battle_hud(img)
-            entry = {"t": round(time.time(), 1), "poll": i, **hud}
-            kills = hud.get("kills")
-            if kills is not None and kills > self._best_kills:
-                self._best_kills = kills
-                frame = self._save_frame(p, f"kills-{kills}")
-                if frame:
-                    entry["frame"] = frame
-            # 费用卡满（>=99）连续出现时留一帧
-            if hud.get("cost") == 99 and time.time() - self._last_key_t > 30:
-                self._last_key_t = time.time()
-                frame = self._save_frame(p, "cost-max")
-                if frame:
-                    entry["frame"] = frame
-            self.timeline.append(entry)
-            time.sleep(self.interval)
+            now = time.time()
+            fast.update(img, now)
+            fail = fast.is_fail_page(img)
+            if fail:
+                fast.fail_streak += 1
+            else:
+                fast.fail_streak = 0
+            # 低频 OCR 补数值标签（每 12 帧 ≈ 20s 一次）
+            if i == 1 or i % 12 == 0:
+                fast.refresh_labels(img, now)
+            labels = {"kills": fast.kills_value, "kills_total": fast.kills_total,
+                      "life": fast.life, "cost": fast.cost}
+            if fast.kills_value is not None and self.battle_start is None:
+                self.battle_start = now
+            if fast.life is not None and self.initial_life is None:
+                self.initial_life = fast.life
+            small = cv2.resize(img, (640, 360), interpolation=cv2.INTER_AREA)
+            self.buf.append({"t": now, "img": small, "full": img, "hud": dict(labels)})
+            self.perf.append(now - t0)
+            self.timeline.append({"t": round(now, 1), "poll": i,
+                                  "elapsed": round(self._battle_elapsed(), 1), **labels,
+                                  "cost99": fast.cost_is_99(img), "fail": fail,
+                                  "ms": round((now - t0) * 1000)})
+
+            # ---- 异常判定（连续 2 帧确认 + 战斗 ≥20s）----
+            life_drop = (self.initial_life is not None and fast.life is not None
+                         and fast.life < self.initial_life)
+            if self._confirm("life_drop", life_drop, now):
+                self._fire_incident("life_drop", now, drop=True)
+
+            stall = False
+            if self._battle_elapsed() >= self.battle_min_confirm and fast.last_kills_change:
+                stalled = (now - fast.last_kills_change) >= self.stall_secs
+                stall = stalled and fast.cost_is_99(img)
+            if self._confirm("stall99", stall, now):
+                self._fire_incident("stall99", now, drop=True)
+
+            if self._confirm("task_fail", fail, now):
+                self._fire_incident("task_fail", now, drop=True)
+            time.sleep(max(0.0, self.interval - (time.time() - t0)))
 
     def stop(self) -> None:
         self.stop_flag.set()
 
+    def perf_summary(self) -> dict:
+        if not self.perf:
+            return {}
+        arr = sorted(self.perf)
+        return {"frames": len(arr), "avg_ms": round(sum(arr) / len(arr) * 1000, 1),
+                "p50_ms": round(arr[len(arr) // 2] * 1000, 1),
+                "p95_ms": round(arr[int(len(arr) * 0.95)] * 1000, 1), "max_ms": round(arr[-1] * 1000, 1)}
 
-def _filter_log(since: datetime, log_path: pathlib.Path = MAA_LOG, tail_bytes: int = 40_000_000) -> list[str]:
+    def save_final_sheet(self, incident_t: float | None = None, tag: str = "final") -> str:
+        frames = list(self.buf)
+        if not frames:
+            return ""
+        sheet = make_contact_sheet(frames, self.out_dir / f"{tag}_contact_sheet.jpg",
+                                  incident_t or time.time(), refresh_hud=True)
+        if sheet:
+            self.contact_sheets.append(sheet)
+        return sheet
+
+    def final_hud(self) -> dict:
+        for fr in reversed(list(self.buf)):
+            if fr.get("hud"):
+                return fr["hud"]
+        return {}
+
+
+# ── asst.log → action_trace ──
+
+_TS = re.compile(r"\[(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d+)\]")
+_BP = re.compile(r'SubTaskExtraInfo \{"class":"asst::BattleProcessTask","details":\{"action":"([^"]+)"'
+                 r'(?:,"doc":(?:""|"[^"]*"),"doc_color":(?:""|"[^"]*"),"elapsed_time":-?\d+,"target":"([^"]*)"})?')
+_ERR_GROUP = re.compile(r"BattleProcessTask::to_group Group not found in combat data: (.+)$")
+_DEPLOY_ENTER = re.compile(r"BattleHelper::deploy_oper \| enter")
+_SLEEP = re.compile(r"sleep_and_do_strategy ms: (\d+)")
+
+
+def action_trace(since: datetime, until: datetime | None = None,
+                 log_path: pathlib.Path = MAA_LOG) -> dict:
+    lines = _filter_log(since, log_path, until=until)
+    trace: list[dict] = []
+    deployed: list[str] = []
+    errors: list[str] = []
+    last_sleep = 0
+    for line in lines:
+        ts = ""
+        m = _TS.search(line)
+        if m:
+            ts = m.group(1)[11:]
+        if _DEPLOY_ENTER.search(line):
+            # 紧跟的上一条 Deploy 目标就是这个实际部署
+            target = next((t["target"] for t in reversed(trace) if t["action"] == "Deploy" and t.get("_pending")), "")
+            if target:
+                for t in reversed(trace):
+                    if t.get("_pending") and t["action"] == "Deploy":
+                        t["_pending"] = False
+                        break
+                deployed.append(target)
+            trace.append({"ts": ts, "action": "deploy_oper", "target": target, "status": "ok"})
+            continue
+        m = _BP.search(line)
+        if m:
+            action, target = m.group(1), (m.group(2) or "")
+            trace.append({"ts": ts, "action": action, "target": target, "status": "executed",
+                          "_pending": action == "Deploy"})
+            continue
+        m = _ERR_GROUP.search(line)
+        if m:
+            errors.append(m.group(1).strip())
+            trace.append({"ts": ts, "action": "to_group", "target": m.group(1).strip(), "status": "error"})
+            continue
+        m = _SLEEP.search(line)
+        if m:
+            last_sleep = int(m.group(1))
+            if last_sleep >= 1000:
+                trace.append({"ts": ts, "action": "wait_trigger", "target": "", "status": f"waiting {last_sleep}ms"})
+    # 清理内部字段
+    for t in trace:
+        t.pop("_pending", None)
+    # 最后成功动作（非等待类）
+    ok_actions = [t for t in trace if t["status"] in ("executed", "ok")]
+    last_ok = ok_actions[-1] if ok_actions else None
+    # 卡住/失败：最后一条真错误（排除 to_group 这种无害告警）或最后一条 waiting
+    real_errors = [t for t in trace if t["status"] == "error" and t["action"] != "to_group"]
+    stuck = real_errors[-1] if real_errors else None
+    if stuck is None:
+        waiting = [t for t in trace if t["status"].startswith("waiting")]
+        stuck = waiting[-1] if waiting else None
+    if stuck is None:
+        stuck = trace[-1] if trace else None
+    return {
+        "trace": trace[-120:],
+        "deployed_opers": deployed,
+        "last_ok_action": last_ok,
+        "stuck_or_failed_action": stuck,
+    }
+
+
+def _filter_log(since: datetime, log_path: pathlib.Path = MAA_LOG, tail_bytes: int = 40_000_000,
+                until: datetime | None = None) -> list[str]:
     if not log_path.exists():
         return []
     try:
@@ -217,38 +557,35 @@ def _filter_log(since: datetime, log_path: pathlib.Path = MAA_LOG, tail_bytes: i
         return []
     out = []
     for line in data.splitlines():
-        m = re.search(r"\[(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d+)\]", line)
+        m = _TS.search(line)
         if not m:
             continue
         try:
             ts = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S.%f")
         except ValueError:
             continue
-        if ts >= since:
+        if ts >= since and (until is None or ts <= until):
             out.append(line)
     return out
 
 
-def build_report(run_dir: pathlib.Path, timeline: list[dict] | None = None) -> dict:
+def build_report(run_dir: pathlib.Path, timeline: list[dict] | None = None,
+                 observer: "BattleObserver | None" = None) -> dict:
     run_dir = run_dir.resolve()
     ev = run_dir / "events.log"
     events = ev.read_text(encoding="utf-8", errors="replace").splitlines() if ev.exists() else []
-    started = None
-    for line in events:
-        m = re.match(r"(\d\d:\d\d:\d\d)", line)
-        if m and started is None:
-            started = m.group(1)
-    # run 当天的启动时刻
-    day = None
     m = re.search(r"runs[\\/](\d{8})-(\d{6})", str(run_dir))
-    since = datetime.now()
-    if m:
-        since = datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S")
-    log_lines = _filter_log(since)
-    errors = [ln for ln in log_lines if "SubTaskError" in ln or "TaskChainError" in ln]
-    last_actions = [ln for ln in log_lines if "cur_task" in ln][-5:]
-
+    since = datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S") if m else datetime.now()
     settle = run_dir / "settle.png"
+    # 日志上界：用本 run 的 settle.png 修改时间（没有就用目录里最新文件）+10s，
+    # 否则会把后续几轮 run 的 action 也扫进来（实测串轮）。
+    until = None
+    stamp = settle.stat().st_mtime if settle.exists() else 0
+    if not stamp:
+        mtimes = [f.stat().st_mtime for f in run_dir.glob("*") if f.is_file()]
+        stamp = max(mtimes) if mtimes else 0
+    if stamp:
+        until = datetime.fromtimestamp(stamp + 10)
     stars = detect_stars(settle) if settle.exists() else {"stars": None, "reason": "没有 settle.png"}
     job_title = ""
     for jf in run_dir.glob("job-*.json"):
@@ -261,29 +598,34 @@ def build_report(run_dir: pathlib.Path, timeline: list[dict] | None = None) -> d
     for line in events:
         if "任务结束：" in line:
             result = line.split("任务结束：")[-1].strip()
-    return {
+    tl = timeline if timeline is not None else []
+    kills_seq = [e.get("kills") for e in tl if e.get("kills") is not None]
+    rep = {
         "runDir": str(run_dir),
         "jobTitle": job_title,
         "result": result,
         "stars": stars.get("stars"),
         "starsReason": stars.get("reason"),
         "settlePng": str(settle) if settle.exists() else "",
-        "pretflightPng": str(run_dir / "preflight.png"),
-        "timeline": timeline or [],
-        "maxKills": max((e.get("kills") or 0 for e in (timeline or [])), default=None),
-        "asst": {
-            "since": since.isoformat(),
-            "errorCount": len(errors),
-            "lastErrors": [e[:300] for e in errors[-5:]],
-            "lastTaskLines": [l.strip()[:200] for l in last_actions],
-        },
+        "timeline": tl,
+        "maxKills": max(kills_seq) if kills_seq else None,
+        "killsSeries": kills_seq,
+        "action_trace": action_trace(since, until),
+        "asst": {"since": since.isoformat()},
     }
+    if observer is not None:
+        rep["perf"] = observer.perf_summary()
+        rep["incidents"] = observer.incidents
+        rep["contactSheets"] = observer.contact_sheets
+        rep["initialLife"] = observer.initial_life
+        rep["battleSeconds"] = round(observer._battle_elapsed(), 1)
+    return rep
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Plan B 战报采集")
-    ap.add_argument("--run", required=True, help="run 目录（D:\\copilot-picker-local\\runs\\<id>）")
-    ap.add_argument("--out", default="", help="battle_report.json 输出路径（默认写进 run 目录）")
+    ap = argparse.ArgumentParser(description="Plan B 战报采集（离线对已有 run）")
+    ap.add_argument("--run", required=True)
+    ap.add_argument("--out", default="")
     args = ap.parse_args(argv)
     run_dir = pathlib.Path(args.run)
     rep = build_report(run_dir)
@@ -291,6 +633,9 @@ def main(argv: list[str] | None = None) -> int:
     out.write_text(json.dumps(rep, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({k: rep[k] for k in ("runDir", "result", "stars", "starsReason", "maxKills")},
                      ensure_ascii=False, indent=2))
+    print("deployed:", rep["action_trace"]["deployed_opers"])
+    print("last_ok:", rep["action_trace"]["last_ok_action"])
+    print("stuck:", rep["action_trace"]["stuck_or_failed_action"])
     print("battle_report ->", out)
     return 0
 
