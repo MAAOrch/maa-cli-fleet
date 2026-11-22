@@ -90,3 +90,43 @@ func TestSearchJobsRequiresRoster(t *testing.T) {
 		t.Fatal("空名册应报错")
 	}
 }
+
+// 难度过滤按作业站 difficulty 数字走（1 普通 / 2 突袭 / 3 磨难），
+// 不能只看标题——OS-S-3 实测“磨难”作业标题里没有“突袭”二字。
+func TestFilterJobsByModeUsesDifficulty(t *testing.T) {
+	jobs := []model.Job{
+		{ID: 1, Title: "普通作业", Difficulty: 1},
+		{ID: 2, Title: "突袭作业", Difficulty: 2},
+		{ID: 3, Title: "磨难作业", Difficulty: 3},
+		{ID: 4, Title: "未标注-突袭可用", Difficulty: 0},
+		{ID: 5, Title: "未标注-仅普通可用", Difficulty: 0},
+	}
+	ids := func(in []model.Job) []int {
+		out := make([]int, 0, len(in))
+		for _, j := range in {
+			out = append(out, j.ID)
+		}
+		return out
+	}
+	if got, want := ids(filterJobsByMode(jobs, "normal")), []int{1, 5}; !equalInts(got, want) {
+		t.Errorf("normal 过滤：got=%v want=%v", got, want)
+	}
+	if got, want := ids(filterJobsByMode(jobs, "raid")), []int{2, 3, 4}; !equalInts(got, want) {
+		t.Errorf("raid 过滤：got=%v want=%v", got, want)
+	}
+	if got := ids(filterJobsByMode(jobs, "")); len(got) != 5 {
+		t.Errorf("不传 mode 应返回全部：got=%v", got)
+	}
+}
+
+func equalInts(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}

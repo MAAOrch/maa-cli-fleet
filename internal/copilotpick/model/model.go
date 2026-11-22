@@ -58,7 +58,7 @@ type Job struct {
 	ID             int      `json:"id"`
 	Title          string   `json:"title"`
 	StageName      string   `json:"stageName"`
-	Difficulty     int      `json:"difficulty"` // 1=普通 3=突袭 0=未标注
+	Difficulty     int      `json:"difficulty"` // 1=普通 2=突袭 3=磨难（S关高难，执行按突袭） 0=未标注
 	Rating         int      `json:"rating"`
 	Views          int      `json:"views"`
 	MinimumRequired string  `json:"minimumRequired,omitempty"`
@@ -94,7 +94,7 @@ type StagePlan struct {
 	StageCode string `json:"stageCode"` // 导航用显示名，如 TL-9；可为空，MAA 按 Tile code 导航
 	StageName string `json:"stageName"` // 作业站关卡代码，如 act55side_09
 	JobIDs    []int  `json:"jobIds"`    // 按顺序尝试
-	// RaidJobIDs 是需要按突袭执行的作业（来自作业站的 difficulty=3）。
+	// RaidJobIDs 是需要按突袭执行的作业（作业站 difficulty=2 突袭 / 3 磨难）。
 	// 执行器对这几份作业在 copilot_list 里写 is_raid=true。
 	RaidJobIDs []int `json:"raidJobIds,omitempty"`
 }
