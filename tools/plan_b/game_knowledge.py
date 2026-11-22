@@ -38,6 +38,12 @@ FUNDAMENTALS = """
 
 
 STAGE_HINTS = {
+    "main": """
+## 普通关提示
+- 普通关地图简单、敌人少，适合作为 Plan B 起点。
+- 优先保证入口阻挡，再补输出。
+- 开场用先锋回费，不要一上来就下高费干员。
+""".strip(),
     "s": """
 ## S 关提示
 - S 关通常地图窄、敌人密，阻挡压力大。
@@ -57,6 +63,9 @@ def inject_knowledge(stage_code: str = "", raid: bool = False) -> str:
     parts = [FUNDAMENTALS]
     code = (stage_code or "").upper()
     if "-S-" in code or code.endswith("_S"):
+        parts.append(STAGE_HINTS["s"])
+    elif not "-EX-" in code:
+        parts.append(STAGE_HINTS.get("main", ""))
         parts.append(STAGE_HINTS["s"])
     elif "-EX-" in code or "EX" in code:
         parts.append(STAGE_HINTS["ex"])

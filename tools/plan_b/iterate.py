@@ -57,14 +57,24 @@ def load_event(event: str) -> dict:
 
 
 def enter_drill(code: str, raid: bool) -> bool:
-    """PI 把游戏从任意界面带到「演习编队页」。返回是否成功。"""
-    if "-S-" not in code:
-        raise SystemExit("Plan B Phase 1 只支持 S 关（EX/主线入口还没做演习链）")
-    n = code.rsplit("-", 1)[-1]
-    steps = ["收结算页", "进入S图", f"进入S-{n}详情"]
+    """PI 把游戏从任意界面带到「演习编队页」。返回是否成功。
+
+    S 关走专用详情链；普通关（OS-1 等）先进图，详情页由后续 MAA find_stage 处理。
+    """
+    steps = ["收结算页"]
+    if "-S-" in code:
+        n = code.rsplit("-", 1)[-1]
+        steps += ["进入S图", f"进入S-{n}详情"]
+    elif "-EX-" in code:
+        steps.append("进入EX图")
+    else:
+        # 普通关：进图后由 MAA find_stage 定位
+        steps.append("进入普通图")
     if raid:
         steps.append("切突袭模式")
-    steps.append("进入演习")
+    # 演习按钮在详情页；普通关先进图，详情由后续流程处理
+    if "-S-" in code:
+        steps.append("进入演习")
     for step in steps:
         ok, _ = run_task(step, timeout=200)
         if not ok:
@@ -87,13 +97,15 @@ def run_round(bundle: pathlib.Path, ctx: dict, candidate: pathlib.Path, args) ->
     observer = obs.BattleObserver(device, round_dir, interval=args.poll_interval)
     observer.start()
     try:
+        is_s = "-S-" in ctx["stage"]["code"]
         r = _post(args.picker, "/api/run/start", {
             "accountId": event["account"],
             "client": event.get("client", ""),
             "stageCode": ctx["stage"]["code"],
             "stageName": ctx["stage"]["stageName"],
             "jobIds": [0],
-            "manualMode": True,
+            "manualMode": is_s,
+            "onMap": not is_s,
             "formation": True,
             "maxAttempts": 1,
             "timeoutMin": args.timeout_min,
