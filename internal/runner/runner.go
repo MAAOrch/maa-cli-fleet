@@ -118,7 +118,7 @@ func New(cfgPath string) (*Runner, error) {
 		}
 	}
 	if cfg.PiExe != "" {
-		if err := r.executors.Register("pi.demo", newPiExecutor(cfg.PiExe, cfg.LogDir)); err != nil {
+		if err := r.executors.Register("pi.", newPiExecutor(cfg.PiExe, cfg.LogDir)); err != nil {
 			return nil, err
 		}
 	}
