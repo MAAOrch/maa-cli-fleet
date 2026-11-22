@@ -738,11 +738,19 @@ def build_app(token: str) -> Starlette:
     return Starlette(routes=routes, lifespan=lifespan)
 
 
+def create_app() -> Starlette:
+    """uvicorn --reload 用的应用工厂（从环境变量读取 DSH_MCP_TOKEN）。"""
+    token = (os.environ.get("DSH_MCP_TOKEN") or "").strip()
+    if not token:
+        raise RuntimeError("DSH_MCP_TOKEN 未设置，拒绝启动")
+    return build_app(token)
+
+
 # --------------------------------------------------------------------------- #
 # 启动 / 冒烟                                                                    #
 # --------------------------------------------------------------------------- #
 
-def _serve(port: int) -> int:
+def _serve(port: int, reload: bool = False) -> int:
     token = (os.environ.get("DSH_MCP_TOKEN") or "").strip()
     if not token:
         print("[ERR] DSH_MCP_TOKEN 未设置，拒绝启动（防止无鉴权裸奔）。"
@@ -769,7 +777,22 @@ def _serve(port: int) -> int:
     print("[dsh-mcp] OAuth 状态文件: %s" % oauth.store_path(), file=sys.stderr)
     print("[dsh-mcp] 仅监听 %s；外部访问请走 Cloudflare Tunnel。" % DEFAULT_HOST,
           file=sys.stderr)
-    uvicorn.run(app, host=DEFAULT_HOST, port=port, log_level="info")
+    if reload:
+        here = str(Path(__file__).resolve().parent)
+        print("[dsh-mcp] 热重载已开启（监控 %s/*.py）" % here, file=sys.stderr)
+        uvicorn.run(
+            "server:create_app",
+            factory=True,
+            host=DEFAULT_HOST,
+            port=port,
+            log_level="info",
+            reload=True,
+            reload_dirs=[here],
+            reload_includes=["*.py"],
+            app_dir=here,
+        )
+    else:
+        uvicorn.run(app, host=DEFAULT_HOST, port=port, log_level="info")
     return 0
 
 
@@ -1279,6 +1302,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int,
                         default=int(os.environ.get("DSH_MCP_PORT", DEFAULT_PORT)),
                         help="监听端口（默认 8795；地址固定 127.0.0.1）")
+    parser.add_argument("--reload", action="store_true",
+                        help="监控 tools/dsh_mcp/*.py 自动热重载（配合 stateless=True 不中断对话）")
     args = parser.parse_args(argv)
 
     if args.list:
@@ -1288,7 +1313,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.check:
         return _check(args.port)
     try:
-        return _serve(args.port)
+        return _serve(args.port, reload=args.reload)
     except KeyboardInterrupt:
         return 0
 

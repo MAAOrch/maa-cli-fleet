@@ -11,7 +11,8 @@
 #>
 param(
     [switch]$Check,
-    [int]$Port = 8795
+    [int]$Port = 8795,
+    [switch]$NoReload
 )
 
 $ErrorActionPreference = 'Stop'
@@ -34,6 +35,7 @@ if (-not $env:DSH_MCP_TOKEN) {
 
 $argv = @($server, '--port', "$Port")
 if ($Check) { $argv += '--check' }
+elseif (-not $NoReload) { $argv += '--reload' }
 
 & $py @argv
 exit $LASTEXITCODE
