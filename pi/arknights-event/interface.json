@@ -1,0 +1,100 @@
+{
+  "interface_version": 2,
+  "name": "arknights-event",
+  "label": "Arknights Event Nav",
+  "title": "Arknights Event Nav（活动图导航）",
+  "version": "0.2.0",
+  "description": "主界面 → 终端 → 活动 hub → 普通/EX/S 区域地图 的 MaaFramework PI 导航任务；推关由 copilot-picker 执行。",
+  "license": "AGPL-3.0",
+  "controller": [
+    {
+      "name": "Android",
+      "label": "Android (ADB)",
+      "type": "Adb",
+      "display_short_side": 720
+    }
+  ],
+  "resource": [
+    {
+      "name": "Arknights",
+      "label": "Arknights",
+      "path": [
+        "resource"
+      ]
+    }
+  ],
+  "task": [
+    {
+      "name": "进入普通图",
+      "label": "进入普通图（圣巡之旅）",
+      "entry": "NavMainStart",
+      "description": "从任意界面导航到活动普通图；到位后 DoNothing 结束。"
+    },
+    {
+      "name": "进入EX图",
+      "label": "进入 EX 图（变革之路）",
+      "entry": "NavEXStart",
+      "description": "从任意界面导航到活动 EX 图；到位后 DoNothing 结束。"
+    },
+    {
+      "name": "进入S图",
+      "label": "进入 S 图（喀兰之心）",
+      "entry": "NavSStart",
+      "description": "从任意界面导航到活动 S 图；到位后 DoNothing 结束。"
+    },
+    {
+      "name": "进入S-1详情",
+      "label": "进入 S-1 关卡详情",
+      "entry": "NavSDetail1Start",
+      "description": "先收掉上一场的结算/失败页，再把 S 图上 OS-S-N 的关卡详情点开并校验右上角代号（一次 MaaPiCli 调用完成两件事）。S 关必须走这条：MAA 的 find_stage 会把标签 OCR 成 0S-S-N 找不到。"
+    },
+    {
+      "name": "进入S-2详情",
+      "label": "进入 S-2 关卡详情",
+      "entry": "NavSDetail2Start",
+      "description": "先收掉上一场的结算/失败页，再把 S 图上 OS-S-N 的关卡详情点开并校验右上角代号（一次 MaaPiCli 调用完成两件事）。S 关必须走这条：MAA 的 find_stage 会把标签 OCR 成 0S-S-N 找不到。"
+    },
+    {
+      "name": "进入S-3详情",
+      "label": "进入 S-3 关卡详情",
+      "entry": "NavSDetail3Start",
+      "description": "先收掉上一场的结算/失败页，再把 S 图上 OS-S-N 的关卡详情点开并校验右上角代号（一次 MaaPiCli 调用完成两件事）。S 关必须走这条：MAA 的 find_stage 会把标签 OCR 成 0S-S-N 找不到。"
+    },
+    {
+      "name": "进入S-4详情",
+      "label": "进入 S-4 关卡详情",
+      "entry": "NavSDetail4Start",
+      "description": "先收掉上一场的结算/失败页，再把 S 图上 OS-S-N 的关卡详情点开并校验右上角代号（一次 MaaPiCli 调用完成两件事）。S 关必须走这条：MAA 的 find_stage 会把标签 OCR 成 0S-S-N 找不到。"
+    },
+    {
+      "name": "进入S-5详情",
+      "label": "进入 S-5 关卡详情",
+      "entry": "NavSDetail5Start",
+      "description": "先收掉上一场的结算/失败页，再把 S 图上 OS-S-N 的关卡详情点开并校验右上角代号（一次 MaaPiCli 调用完成两件事）。S 关必须走这条：MAA 的 find_stage 会把标签 OCR 成 0S-S-N 找不到。"
+    },
+    {
+      "name": "切突袭模式",
+      "label": "切换突袭模式",
+      "entry": "NavRaidStart",
+      "description": "在关卡详情页点「突袭模式」，等按钮变成「开始突袭」。"
+    },
+    {
+      "name": "收结算页",
+      "label": "收结算页 / 回主界面",
+      "entry": "NavCollectStart",
+      "description": "处理结算页、任务失败页、保存阵容弹窗，并一路返回到主界面。"
+    },
+    {
+      "name": "收结算页留在地图",
+      "label": "收结算页（停在活动图）",
+      "entry": "NavCollectMapStart",
+      "description": "处理结算页/失败页后停在活动图，不退回主界面。"
+    },
+    {
+      "name": "补充理智",
+      "label": "补充理智（用药剂，需 OCR 到理智合剂才点）",
+      "entry": "NavRefillUseStart",
+      "description": "理智不足弹层已弹出时，用药剂补满一档；必须 OCR 到底部「理智合剂」确认语才点 ✓，认不到就不动（防碎石）。驱动 --max-potions>0 才用，默认不走。"
+    }
+  ]
+}

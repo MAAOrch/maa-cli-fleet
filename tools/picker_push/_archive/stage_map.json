@@ -1,0 +1,31 @@
+{
+  "_comment": "copilot-picker 手动模式用的活动图坐标（1280x720）。换活动/换分辨率要重做。",
+  "event": "act55side",
+  "event_name": "时间啊，向前！",
+  "api": "http://127.0.0.1:8790",
+  "account": "local0b",
+  "client": "Bilibili",
+  "adb": "D:\\Xiach\\MuMuPlayer\\nx_main\\adb.exe",
+  "device": "127.0.0.1:16384",
+  "ui": {
+    "terminal": [980, 265],
+    "event_card": [280, 380],
+    "center": [640, 620],
+    "back": [40, 45],
+    "home_icon": [238, 38],
+    "home_entry": [90, 240],
+    "raid_button": [700, 660]
+  },
+  "maps": {
+    "ex": { "card": [845, 545], "desc": "长冬初青（EX 图）" },
+    "s": { "card": [1135, 680], "desc": "世纪之春（S 图）" }
+  },
+  "stages": {
+    "TL-EX-4": { "map": "ex", "node": [570, 485], "stageName": "act55side_ex04" },
+    "TL-EX-5": { "map": "ex", "node": [855, 490], "stageName": "act55side_ex05" },
+    "TL-EX-6": { "map": "ex", "node": [830, 340], "stageName": "act55side_ex06" },
+    "TL-EX-7": { "map": "ex", "node": [845, 197], "stageName": "act55side_ex07" },
+    "TL-S-1": { "map": "s", "node": [400, 265], "stageName": "act55side_s01" },
+    "TL-S-2": { "map": "s", "node": [865, 265], "stageName": "act55side_s02" }
+  }
+}

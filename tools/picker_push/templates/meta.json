@@ -1,0 +1,102 @@
+{
+  "home": {
+    "roi": [
+      720,
+      215,
+      1090,
+      300
+    ],
+    "desc": "主界面 终端牌",
+    "file": "home.png"
+  },
+  "terminal": {
+    "roi": [
+      150,
+      300,
+      340,
+      470
+    ],
+    "desc": "终端 活动卡",
+    "file": "terminal.png"
+  },
+  "hub": {
+    "roi": [
+      20,
+      470,
+      330,
+      590
+    ],
+    "desc": "活动 hub logo",
+    "file": "hub.png"
+  },
+  "map_ex": {
+    "roi": [
+      520,
+      150,
+      820,
+      260
+    ],
+    "desc": "EX 图 清真寺",
+    "file": "map_ex.png"
+  },
+  "map_s": {
+    "roi": [
+      240,
+      330,
+      360,
+      620
+    ],
+    "desc": "S 图 红旗草地",
+    "file": "map_s.png"
+  },
+  "detail": {
+    "roi": [
+      1070,
+      625,
+      1215,
+      700
+    ],
+    "desc": "详情页 开始行动",
+    "file": "detail.png"
+  },
+  "settlement": {
+    "roi": [
+      45,
+      190,
+      360,
+      290
+    ],
+    "desc": "结算 行动结束",
+    "file": "settlement.png"
+  },
+  "title": {
+    "roi": [
+      25,
+      22,
+      310,
+      70
+    ],
+    "desc": "标题页 清除缓存",
+    "file": "title.png"
+  },
+  "loading": {
+    "roi": [
+      500,
+      210,
+      760,
+      470
+    ],
+    "desc": "加载 Rhodes Island",
+    "file": "loading.png"
+  },
+  "operators": {
+    "roi": [
+      700,
+      20,
+      1250,
+      60
+    ],
+    "desc": "干员页 筛选条",
+    "file": "operators.png"
+  }
+}
