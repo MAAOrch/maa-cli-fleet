@@ -24,6 +24,8 @@ core/*
 /center/state/
 /center/*.out
 /center/*.err
+# 值班工具在 dist 不可写时的临时产物（含账号名/截图）
+/ai_daily_tmp/
 
 # ── 本地配置 / 凭据 ──────────────────────────────────────
 /config/fleet.local.json
@@ -54,3 +56,4 @@ __pycache__/
 /%SystemDrive%/
 /undefined/
 /~
+/config/picker-connections.local.json
