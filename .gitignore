@@ -63,3 +63,18 @@ __pycache__/
 /undefined/
 /~
 /config/picker-connections.local.json
+# ── 本地模型 junction 与临时探测脚本 ───────────────────────
+/pi/arknights-event/resource/model/
+/_*.py
+/_*.png
+/tools/_*.py
+/tools/_*.ps1
+/_navlab/
+/_tmp/
+/.tmp/
+/.tmp-*/
+/.chrome-mpe/
+/.npm-cache2/
+/.pnpm-store/
+/logs/
+/$null

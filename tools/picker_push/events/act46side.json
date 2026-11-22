@@ -6,7 +6,7 @@
   "account": "local0b",
   "client": "Bilibili",
   "adb": "D:\\Xiach\\MuMuPlayer\\nx_main\\adb.exe",
-  "device": "127.0.0.1:16385",
+  "device": "127.0.0.1:16384",
   "client_package": "com.hypergryph.arknights.bilibili",
   "other_clients": ["com.hypergryph.arknights", "com.YoStarJP.Arknights", "com.YoStarEN.Arknights"],
   "manual_areas": ["s"],
@@ -45,4 +45,5 @@
     "OS-S-5": { "stageName": "act46side_s05", "area": "s", "mode": "normal" }
   }
 }
+
 
