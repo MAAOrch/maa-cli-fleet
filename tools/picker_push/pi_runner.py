@@ -15,32 +15,70 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-ROOT = Path(r"D:\maa-cli-fleet")
+# 仓库根 = 本文件往上三层（tools/picker_push/pi_runner.py）。绝不写死主目录：
+# 双开时主仓（D:\maa-cli-fleet）和 worktree（D:\maa-cli-fleet-b）各跑各的 runtime，
+# 写死主目录会让 B 会话把 PI 日志/配置写进主仓的 runtime。
+ROOT = Path(__file__).resolve().parents[2]
 PI_PROJECT = ROOT / "pi" / "arknights-event"
-RUNTIME = ROOT / "runtime" / "maa_cli_event"
+RUNTIME = Path(os.environ.get("PICKER_PI_RUNTIME") or (ROOT / "runtime" / "maa_cli_event"))
 CONFIG = RUNTIME / "config" / "maa_pi_config.json"
 
+# 设备默认值只从环境变量取（不写死实例 0 的 16384/1-MuMuPlayer v5+）：
+#   PICKER_ADB_NAME      MaaToolkit 探测名，如 "2-MuMuPlayer v5+"
+#   PICKER_ADB_ADDRESS   adb 地址，如 "127.0.0.1:16416"
+# 没设时保留 config/maa_pi_config.json 里已有值（setup_pi.ps1 生成的那份）。
 DEFAULT_CONFIG = {
     "controller": {"name": "Android"},
-    "adb": {"name": "1-MuMuPlayer v5+", "adb_path": "D:/Xiach/MuMuPlayer/nx_main/adb.exe", "address": "127.0.0.1:16384"},
+    "adb": {
+        "name": os.environ.get("PICKER_ADB_NAME", ""),
+        "adb_path": "D:/Xiach/MuMuPlayer/nx_main/adb.exe",
+        "address": os.environ.get("PICKER_ADB_ADDRESS", ""),
+    },
     "resource": "Arknights",
     "task": [],
 }
 
+# set_device 由驱动（push_event.py）在解析出目标实例后调用，覆盖 DEFAULT_CONFIG。
+_DEVICE = {"name": "", "address": ""}
+
+
+def set_device(address: str | None = None, name: str | None = None) -> None:
+    """显式指定 PI 要连的模拟器（双开时区分实例 0/1 的唯一可靠入口）。"""
+    if address:
+        _DEVICE["address"] = address
+    if name:
+        _DEVICE["name"] = name
+
+
+def runtime_dir() -> Path:
+    return RUNTIME
+
 
 def _write_config(task_name: str) -> None:
-    cfg = dict(DEFAULT_CONFIG)
+    cfg = json.loads(json.dumps(DEFAULT_CONFIG))  # 深拷贝，别把 DEFAULT_CONFIG 里的 adb 字典改脏
     if CONFIG.exists():
         try:
             cfg.update(json.loads(CONFIG.read_text(encoding="utf-8")))
         except Exception:  # noqa: BLE001
             pass
+    # 显式设备优先于文件里的旧值（双开：setup 时是实例 A，之后切实例 B 不重跑 setup 也能生效）
+    adb = dict(cfg.get("adb") or {})
+    for key in ("name", "address"):
+        if _DEVICE.get(key):
+            adb[key] = _DEVICE[key]
+    cfg["adb"] = adb
+    if not adb.get("name") or not adb.get("address"):
+        raise RuntimeError(
+            "PI 设备地址未配置：先跑 setup_pi.ps1，或设 PICKER_ADB_NAME/PICKER_ADB_ADDRESS，"
+            "或调用 pi_runner.set_device(address, name)"
+        )
     cfg["task"] = [{"name": task_name, "option": []}]
     CONFIG.parent.mkdir(parents=True, exist_ok=True)
     CONFIG.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

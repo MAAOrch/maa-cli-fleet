@@ -43,6 +43,12 @@ core/*
 /ops/dailydate_*.txt
 /ops/local_*
 /ops/mcp_audit.jsonl
+/ops/dsh_mcp_audit.jsonl
+/runtime/dsh_jobs/
+/runtime/dsh_mcp_oauth.json
+/runtime/dsh_mcp_oauth_check.json
+/runtime/
+node_modules/
 /tmp/
 *.bak
 __pycache__/

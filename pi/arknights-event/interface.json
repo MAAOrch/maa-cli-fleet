@@ -3,8 +3,8 @@
   "name": "arknights-event",
   "label": "Arknights Event Nav",
   "title": "Arknights Event Nav（活动图导航）",
-  "version": "0.2.0",
-  "description": "主界面 → 终端 → 活动 hub → 普通/EX/S 区域地图 的 MaaFramework PI 导航任务；推关由 copilot-picker 执行。",
+  "version": "0.3.0",
+  "description": "主界面 → 终端 → 活动 hub → 普通/EX/S 区域地图 的 MaaFramework PI 导航任务；资源按「基座 resource + 通用 common + 活动 events/<event>」分层叠加；推关由 copilot-picker 执行。",
   "license": "AGPL-3.0",
   "controller": [
     {
@@ -19,7 +19,9 @@
       "name": "Arknights",
       "label": "Arknights",
       "path": [
-        "resource"
+        "resource",
+        "resource/common",
+        "resource/events/act46side"
       ]
     }
   ],

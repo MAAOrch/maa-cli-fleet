@@ -41,6 +41,8 @@ type Config struct {
 	//   uri           旧行为：`maa copilot maa://<id>`，单作业模式不导航，靠 navMode 抢导航；
 	//   file          旧行为：`maa copilot <本地文件>`，能先 normalize 修坏作业，同样不导航。
 	CopilotMode string `json:"copilotMode"`
+	// JobScoresFile 跨号共享作业评分库路径（默认 <root>/job_scores.json，也可用环境变量 COPILOT_JOB_SCORES_FILE 覆盖）。
+	JobScoresFile string `json:"jobScoresFile,omitempty"`
 }
 
 // DefaultConfig 返回按 root 推导的默认配置。
@@ -154,6 +156,7 @@ func mergeConfig(dst *Config, src *Config) {
 	set(&dst.DefaultClient, src.DefaultClient)
 	set(&dst.NavMode, src.NavMode)
 	set(&dst.CopilotMode, src.CopilotMode)
+	set(&dst.JobScoresFile, src.JobScoresFile)
 	if src.StartupTimeoutSec > 0 {
 		dst.StartupTimeoutSec = src.StartupTimeoutSec
 	}
@@ -212,6 +215,18 @@ func (c Config) Env() []string {
 // AsstLogPath 是 MAA 的 asst.log 路径。
 func (c Config) AsstLogPath() string {
 	return filepath.Join(c.MaaStateDir, "debug", "asst.log")
+}
+
+// JobScoresPath 返回跨号共享作业评分库路径。
+// 优先级：环境变量 COPILOT_JOB_SCORES_FILE > 配置 jobScoresFile > <root>/job_scores.json。
+func (c Config) JobScoresPath() string {
+	if p := strings.TrimSpace(os.Getenv("COPILOT_JOB_SCORES_FILE")); p != "" {
+		return p
+	}
+	if p := strings.TrimSpace(c.JobScoresFile); p != "" {
+		return p
+	}
+	return filepath.Join(c.Root, "job_scores.json")
 }
 
 // OSName 便于日志输出。

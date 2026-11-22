@@ -181,6 +181,7 @@ func (m *Manager) searchJobs(ctx context.Context, req SearchRequest, pages int) 
 	}
 
 	ext.RankJobs(jobs)
+	m.applyJobScores(jobs)
 	ext.RankJobs(blocked)
 	ext.RankJobs(train)
 	jobs = filterJobsByMode(jobs, req.Mode)
@@ -211,30 +212,38 @@ func stageMatches(stage model.Stage, jobStage string) bool {
 // 作业站标题里会写明适用难度：「仅突袭」= 突袭专用、「仅普通」/「普通」= 普通专用，
 // 不带字样的通常是通用轴。打普通时拿突袭作业、或反之，基本必 0 星（2026-11-22 实测
 // S-3 突袭连试 3 份普通作业全 0 星白花理智），所以在搜索阶段直接筛掉。
+// filterJobsByMode 按作业站的 difficulty 数字过滤：1=普通，2=突袭，3=磨难（S 关高难，
+// 执行时同样按突袭）。数字最可靠；只有 difficulty=0（未标注）时才退回标题关键词猜。
+//
+// 旧实现只看标题（含“突袭”/“仅普通”），实测 OS-S-3 上 8 份作业只滤掉 1 份，
+// 普通/磨难标签的作业全混在一起（2026-11-23 GUI 验收发现）。
 func filterJobsByMode(jobs []model.Job, mode string) []model.Job {
-	switch mode {
-	case "normal":
-		out := jobs[:0]
-		for _, j := range jobs {
-			if strings.Contains(j.Title, "突袭") {
-				continue
-			}
-			out = append(out, j)
-		}
-		return out
-	case "raid":
-		out := jobs[:0]
-		for _, j := range jobs {
-			t := j.Title
-			if strings.Contains(t, "仅普通") || (strings.Contains(t, "普通") && !strings.Contains(t, "突袭")) {
-				continue
-			}
-			out = append(out, j)
-		}
-		return out
-	default:
+	if mode != "normal" && mode != "raid" {
 		return jobs
 	}
+	out := make([]model.Job, 0, len(jobs))
+	for _, j := range jobs {
+		var keep bool
+		switch j.Difficulty {
+		case 1:
+			keep = mode == "normal"
+		case 2, 3:
+			keep = mode == "raid"
+		default: // 0 = 未标注：标题里带“突袭”算突袭，“仅普通/普通”算普通
+			raidTitle := strings.Contains(j.Title, "突袭")
+			normalOnly := strings.Contains(j.Title, "仅普通") ||
+				(strings.Contains(j.Title, "普通") && !raidTitle)
+			if mode == "normal" {
+				keep = !raidTitle
+			} else {
+				keep = !normalOnly
+			}
+		}
+		if keep {
+			out = append(out, j)
+		}
+	}
+	return out
 }
 
 // toJob 把作业站的一条记录 + 匹配结论转成前端的 Job。

@@ -38,6 +38,9 @@ type Manager struct {
 
 	// progress 关卡完成度台账（哪关几星），落盘 <root>/progress.json。
 	progress progressStore
+
+	// scores 跨号共享作业评分库，落盘 job_scores.json。
+	scores jobScoreStore
 }
 
 // BlockedOp 一个「编不进队」的干员条目。
@@ -58,6 +61,7 @@ func NewManager(cfg Config) *Manager {
 	m.loadRosterFile()
 	m.loadBlockedFile()
 	m.loadProgressFile()
+	m.loadJobScoresFile()
 	return m
 }
 
@@ -442,6 +446,10 @@ type Run struct {
 
 	// navStuckFlag：作业集模式的导航看门狗掐掉了当前这份作业。
 	navStuckFlag bool
+
+	// formationTrippedFlag：编队期实时熔断看门狗掐掉了当前这份作业。
+	formationTrippedFlag bool
+	formationTrippedMsg  string
 }
 
 func newRun(m *Manager, id, dir string, acc model.Account, opts model.RunOptions) *Run {

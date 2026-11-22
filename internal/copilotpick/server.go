@@ -49,6 +49,7 @@ func NewHandler(m *Manager) http.Handler {
 	mux.HandleFunc("POST /api/nav/home", h.navHome)
 	mux.HandleFunc("POST /api/nav/restart", h.navRestart)
 	mux.HandleFunc("GET /api/progress", h.progressList)
+	mux.HandleFunc("GET /api/job-scores", h.jobScoresList)
 	mux.HandleFunc("GET /api/unavailable", h.unavailable)
 	mux.HandleFunc("POST /api/unavailable/clear", h.clearUnavailable)
 	mux.HandleFunc("GET /api/ui-state", h.getUIState)
@@ -145,13 +146,21 @@ func (h *handler) boxFromMaa(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "没有指定 MAA 目录，且配置里也没有 maaCoreSource")
 		return
 	}
-	path := filepath.Join(dir, "data", "OperBoxData.json")
+	// 优先读本运行根「扫描干员」的落盘（data_copilot/maa_data/scan_OperBoxData.json）：
+	// 双开时外部 MAA 目录的 data/OperBoxData.json 不属于这个实例的账号（可能是别的号），
+	// 直接读会把别的号的名册导进来。只有本运行根没扫过时才退回外部 MAA 目录。
+	path := filepath.Join(h.m.cfg.MaaDataDir, "scan_OperBoxData.json")
 	roster, err := ext.LoadOperBox(path)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest,
-			"导入 MAA 练度失败："+err.Error()+"\n路径："+path+
-				"\n先在对应 MAA 小工具里跑一次「干员识别」（或一键长草里的「更新数据」任务）再读。")
-		return
+		extPath := filepath.Join(dir, "data", "OperBoxData.json")
+		if r2, e2 := ext.LoadOperBox(extPath); e2 == nil {
+			roster, err, path = r2, nil, extPath
+		} else {
+			writeErr(w, http.StatusBadRequest,
+				"导入 MAA 练度失败："+err.Error()+"\n本运行根路径："+path+"\n外部 MAA 路径："+extPath+
+					"\n先在「扫描干员」里扫一次（或对应 MAA 小工具跑「干员识别」）再读。")
+			return
+		}
 	}
 	h.m.SetRoster(roster)
 	writeJSON(w, http.StatusOK, roster)
@@ -526,6 +535,16 @@ func (h *handler) clearUnavailable(w http.ResponseWriter, r *http.Request) {
 func (h *handler) progressList(w http.ResponseWriter, r *http.Request) {
 	list := h.m.Progress()
 	writeJSON(w, http.StatusOK, map[string]any{"stages": list, "count": len(list)})
+}
+
+// jobScoresList 返回跨号共享作业评分库（job_scores.json）。
+func (h *handler) jobScoresList(w http.ResponseWriter, r *http.Request) {
+	list := h.m.JobScores()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"scores": list,
+		"count":  len(list),
+		"path":   h.m.cfg.JobScoresPath(),
+	})
 }
 
 // ---- 导航 ----
