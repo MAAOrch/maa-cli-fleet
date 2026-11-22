@@ -73,6 +73,12 @@ export interface Job {
   impliedMissing?: number
   /** 名册缺技能数据，技能/模组按已拥有处理 */
   requirementFuzz?: boolean
+  /** 跨号共享评分库（job_scores.json）综合分 */
+  localScore?: number
+  /** 跨号实测 3★/通关次数 */
+  localPass?: number
+  /** 跨号实测失败/低星次数 */
+  localFail?: number
 }
 
 export interface JobSearch {

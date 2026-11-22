@@ -89,6 +89,24 @@ export function JobCard({
               <span className="tag tag-warn">练度不足 {levelShort.size}</span>
             ) : null}
             {job.met ? <span className="tag tag-ok">可编队</span> : null}
+            {!job.met && job.mode === 'borrow' ? (
+              <span className="tag tag-warn" title="缺 1 名干员，可借助战通过">
+                可借助战
+              </span>
+            ) : null}
+            {(job.localPass || job.localFail) ? (
+              <span
+                className={`tag ${(job.localScore ?? 0) > 0 ? 'tag-ok' : (job.localScore ?? 0) < 0 ? 'tag-bad' : 'tag-warn'}`}
+                title={`跨号共享评分库：3★/通关 ${job.localPass ?? 0} 次，失败/低星 ${job.localFail ?? 0} 次，综合分 ${(job.localScore ?? 0).toFixed(1)}`}
+              >
+                {(job.localScore ?? 0) > 0
+                  ? `实测过 ${job.localPass ?? 0}`
+                  : (job.localScore ?? 0) < 0
+                    ? `避雷 败${job.localFail ?? 0}`
+                    : `实测 ${job.localPass ?? 0}胜/${job.localFail ?? 0}败`}
+                {job.localScore ? ` (${job.localScore > 0 ? '+' : ''}${job.localScore.toFixed(1)})` : ''}
+              </span>
+            ) : null}
           </div>
         </div>
 
