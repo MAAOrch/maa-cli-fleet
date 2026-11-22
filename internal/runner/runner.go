@@ -647,7 +647,8 @@ func (r *Runner) claimTasks(now time.Time) []*Task {
 	var ready, claimed []*Task
 	for _, t := range r.state.Tasks {
 		a := r.findAccountLocked(t.AccountID)
-		if a == nil || !a.Enabled || t.State != "queued" || (t.Kind != "daily" && t.Kind != "ann") || r.running[t.AccountID] {
+		isPi := strings.HasPrefix(t.Kind, "pi.")
+		if a == nil || !a.Enabled || t.State != "queued" || (t.Kind != "daily" && t.Kind != "ann" && !isPi) || r.running[t.AccountID] {
 			continue
 		}
 		if t.Kind == "daily" && a.Daily == "" {
