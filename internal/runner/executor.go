@@ -104,3 +104,23 @@ func (r *Registry) Kinds() []string {
 	sort.Strings(out)
 	return out
 }
+
+// ForPrefix 优先精确匹配，其次返回最长前缀匹配的 Executor。
+// 用于 pi.<project>.<entry> 这类动态 Kind。
+func (r *Registry) ForPrefix(kind string) (Executor, bool) {
+	if r == nil || r.m == nil {
+		return nil, false
+	}
+	if e, ok := r.m[kind]; ok {
+		return e, true
+	}
+	var best Executor
+	bestLen := 0
+	for k, e := range r.m {
+		if strings.HasPrefix(kind, k) && len(k) > bestLen {
+			best = e
+			bestLen = len(k)
+		}
+	}
+	return best, best != nil
+}

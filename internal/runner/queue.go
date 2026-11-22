@@ -71,6 +71,7 @@ func nowStamp() string { return time.Now().Format("2006-01-02 15:04:05") }
 // 每行一个 JSON 请求：
 //
 //	{"op":"enqueue","kind":"daily","account":"a07"}   现在就跑（插队）
+//	{"op":"enqueue","kind":"pi.arknights-event.进入S-1详情","account":"a07"}  PI 任务
 //	{"op":"cancel","task":"daily:a07"}                取消（今天不再跑）
 //	{"op":"reset","task":"daily:a07"}                 失败重置（attempts=0 → 重新排队）
 //	{"op":"now","task":"daily:a07"}                   把排班时间提到现在
@@ -136,15 +137,28 @@ func (r *Runner) applyOp(op Op) bool {
 	case "enqueue", "now":
 		t := r.state.Tasks[key]
 		if t == nil {
-			acc := r.findAccountLocked(strings.SplitN(key, ":", 2)[1])
+			parts := strings.SplitN(key, ":", 2)
+			if len(parts) != 2 {
+				return false
+			}
+			kind, account := parts[0], parts[1]
+			acc := r.findAccountLocked(account)
 			if acc == nil {
 				return false
 			}
 			file := acc.Daily
-			if strings.HasPrefix(key, "ann:") {
+			if strings.HasPrefix(kind, "ann") {
 				file = acc.AnnTask
+			} else if strings.HasPrefix(kind, "pi.") {
+				// PI: file 用 entry 部分（或整个 kind 作为回退）
+				_, entry := parsePiKind(kind)
+				if entry != "" {
+					file = entry
+				} else {
+					file = kind
+				}
 			}
-			t = &Task{Key: key, AccountID: acc.ID, Kind: strings.SplitN(key, ":", 2)[0], File: file}
+			t = &Task{Key: key, AccountID: acc.ID, Kind: kind, File: file}
 			r.state.Tasks[key] = t
 		}
 		t.State = "queued"

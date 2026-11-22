@@ -122,11 +122,10 @@ func New(cfgPath string) (*Runner, error) {
 		}
 	}
 	if cfg.PiExe != "" {
-		piEx := newPiExecutor(cfg.PiExe, cfg.LogDir)
-		if err := r.executors.Register("pi.demo", piEx); err != nil {
+		if err := r.executors.Register("pi.", newPiExecutor(cfg.PiExe, cfg.LogDir)); err != nil {
 			return nil, err
 		}
-		_ = r.executors.Register("pi.*", piEx)
+		LogPiProjects()
 	}
 
 	if cfg.LogFile != "" {
@@ -657,7 +656,8 @@ func (r *Runner) claimTasks(now time.Time) []*Task {
 	var ready, claimed []*Task
 	for _, t := range r.state.Tasks {
 		a := r.findAccountLocked(t.AccountID)
-		if a == nil || !a.Enabled || t.State != "queued" || (t.Kind != "daily" && t.Kind != "ann") || r.running[t.AccountID] {
+		isPi := strings.HasPrefix(t.Kind, "pi.")
+		if a == nil || !a.Enabled || t.State != "queued" || (t.Kind != "daily" && t.Kind != "ann" && !isPi) || r.running[t.AccountID] {
 			continue
 		}
 		if t.Kind == "daily" && a.Daily == "" {

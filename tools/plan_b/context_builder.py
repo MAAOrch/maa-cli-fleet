@@ -30,7 +30,8 @@ import numpy as np
 REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tools" / "arknights_agent"))
 
-from tile_map import Level, ResourcePaths  # noqa: E402
+from tile_map import Level, ResourcePaths
+from game_knowledge import inject_knowledge, roster_prompt  # noqa: E402
 
 DEFAULT_RUNS = pathlib.Path(r"D:\copilot-picker-local\runs")
 DEFAULT_PICKER = "http://127.0.0.1:8790"
@@ -277,7 +278,7 @@ def build_bundle(args) -> pathlib.Path:
     }
     (out / "context.json").write_text(json.dumps(ctx, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-    prompt = ["# Plan B 改轴情报包", "",
+    prompt = ["# Plan B 改轴情报包", "", inject_knowledge(args.code, args.raid), "", roster_prompt(roster_entries), "",
               f"- 关卡：`{args.code}` / `{args.stage}`（{lv.name}，{lv.width}x{lv.height}"
               f"{'，突袭' if args.raid else '，普通'}）",
               f"- 汇总情报：`context.json`；网格：`grid.txt`、`grid_topdown.png`、`grid_bottomup.png`",

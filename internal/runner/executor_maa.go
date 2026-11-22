@@ -35,15 +35,13 @@ func (r *Runner) ensureExecutors() *Registry {
 		}
 		maa := &maaExecutor{run: r.execMaa}
 		for _, kind := range []string{"daily", "ann"} {
-			if _, ok := r.executors.For(kind); !ok {
+			if _, ok := r.executors.ForPrefix(kind); !ok {
 				_ = r.executors.Register(kind, maa)
 			}
 		}
 		if r.cfg.PiExe != "" {
-			if _, ok := r.executors.For("pi.demo"); !ok {
-				piEx := newPiExecutor(r.cfg.PiExe, r.cfg.LogDir)
-				_ = r.executors.Register("pi.demo", piEx)
-				_ = r.executors.Register("pi.*", piEx)
+			if _, ok := r.executors.ForPrefix("pi."); !ok {
+				_ = r.executors.Register("pi.", newPiExecutor(r.cfg.PiExe, r.cfg.LogDir))
 			}
 		}
 	})

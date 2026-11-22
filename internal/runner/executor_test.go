@@ -121,12 +121,12 @@ func TestNewRegistersPiDemo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	ex, ok := r.executors.For("pi.demo")
+	ex, ok := r.executors.ForPrefix("pi.demo.nav")
 	if !ok {
-		t.Fatal("pi.demo should be registered when piExe is set")
+		t.Fatal("pi.* should be registered when piExe is set")
 	}
 	if ex.Name() != "maa-pi-cli" {
-		t.Fatalf("pi.demo executor = %q, want maa-pi-cli", ex.Name())
+		t.Fatalf("pi executor = %q, want maa-pi-cli", ex.Name())
 	}
 }
 
@@ -165,7 +165,7 @@ func TestNewRegistersMaaDailyAndAnn(t *testing.T) {
 	if got := r.executors.Kinds(); !slices.Equal(got, []string{"ann", "daily"}) {
 		t.Fatalf("registered kinds = %v, want [ann daily]", got)
 	}
-	if _, ok := r.executors.For("rogue"); ok {
+	if _, ok := r.executors.ForPrefix("rogue"); ok {
 		t.Fatal("Phase 1 keeps the resident lane on startMaa; rogue must not be registered yet")
 	}
 }
@@ -191,5 +191,55 @@ func TestRunTaskUnknownKindFailsClosed(t *testing.T) {
 	}
 	if !strings.Contains(task.Note, "没有注册执行器") {
 		t.Fatalf("note = %q, want 没有注册执行器", task.Note)
+	}
+}
+
+func TestEnqueuePiTask(t *testing.T) {
+	dir := t.TempDir()
+	// 最小 fixture
+	accounts := `{"slots":1,"accounts":[{"id":"a01","name":"t","client":"Official","stage":"1-7","fallback":"1-7","emu":"1","daily":"daily_a01","enabled":true}]}`
+	state := `{"tasks":{}}`
+	cfg := `{"slots":1,"maxConcurrent":1,"maaExe":"x","configDir":"` + filepath.ToSlash(dir) +
+		`","stateRoot":"` + filepath.ToSlash(dir) + `","stateFile":"` +
+		filepath.ToSlash(filepath.Join(dir, "state.json")) + `","accountsFile":"` +
+		filepath.ToSlash(filepath.Join(dir, "accounts.json")) + `"}`
+	for name, body := range map[string]string{
+		"accounts.json": accounts,
+		"state.json":    state,
+		"runner.json":   cfg,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r, err := New(filepath.Join(dir, "runner.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 写一条 PI 入队请求
+	q := filepath.Join(dir, "queue.in")
+	line := `{"op":"enqueue","kind":"pi.arknights-event.进入S-1详情","account":"a01"}
+`
+	if err := os.WriteFile(q, []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if n := r.ApplyOps(); n != 1 {
+		t.Fatalf("ApplyOps applied %d, want 1", n)
+	}
+
+	key := "pi.arknights-event.进入S-1详情:a01"
+	task := r.state.Tasks[key]
+	if task == nil {
+		t.Fatal("PI task not enqueued")
+	}
+	if task.Kind != "pi.arknights-event.进入S-1详情" {
+		t.Fatalf("Kind = %q", task.Kind)
+	}
+	if task.File != "进入S-1详情" {
+		t.Fatalf("File = %q, want entry", task.File)
+	}
+	if task.State != "queued" {
+		t.Fatalf("State = %q", task.State)
 	}
 }

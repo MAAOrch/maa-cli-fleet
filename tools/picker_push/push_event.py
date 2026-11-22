@@ -36,7 +36,8 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 from device import ensure_only_client, page_hint, read_sanity, resolve_device  # noqa: E402
-from pi_runner import run_task, set_device  # noqa: E402
+from pi_runner import run_task, set_device
+from fleet_bridge import enqueue_pi  # noqa: E402
 
 # 台账（progress.json）属于 copilot-picker 的**运行根**，不是代码仓：
 # 双开时绝不能写死主运行根（D:\copilot-picker-local），否则 B 会话会改到实例 0 的台账。
@@ -212,11 +213,15 @@ def stage_has_raid(st: dict, area: str) -> bool:
     return area in ("ex", "s")
 
 
-def go_area(cfg: dict, area: str, log=print) -> None:
+def go_area(cfg: dict, area: str, log=print, via_fleet=False, fleet_state_dir="", account="") -> None:
     """用 PI 任务把游戏导航到指定区域的活动图；失败先收结算页再试一次。"""
     task = AREA_TASK.get(area)
     if not task:
         raise NavFailed(f"未知区域 {area}")
+    if via_fleet:
+        enqueue_pi("arknights-event", task, account or cfg.get("account", ""), fleet_state_dir or None)
+        log(f"    [fleet] 已入队 pi.arknights-event.{task}")
+        return
     ok, out = run_task(task, timeout=300, log=log)
     if ok:
         return
@@ -224,6 +229,10 @@ def go_area(cfg: dict, area: str, log=print) -> None:
     run_task("收结算页", timeout=180, log=log)
     ok, out = run_task(task, timeout=300, log=log)
     if not ok:
+        log("    [pi] 进图失败，尝试滑动扫描")
+        # 滑动兜底：如果已在某个活动图，左右滑找目标
+        if swipe_find_stage(cfg, "OS-1", log=log):
+            return
         raise NavFailed(f"PI 任务「{task}」失败：" + out.strip().splitlines()[-1][:200])
 
 
@@ -274,6 +283,16 @@ def main() -> int:
     ap.add_argument("--client", default="", help="客户端覆盖（Official/Bilibili/YoStarJP...）")
     ap.add_argument("--client-package", dest="client_package", default="", help="目标客户端包名覆盖")
     ap.add_argument("--device", default="", help="adb 地址覆盖，如 127.0.0.1:16416")
+    ap.add_argument(
+        "--via-fleet",
+        action="store_true",
+        help="PI 导航写入 fleet queue.in 而不直接调 MaaPiCli（需要 fleet runner 正在跑）",
+    )
+    ap.add_argument(
+        "--fleet-state-dir",
+        default="",
+        help="fleet 台账目录（queue.in 所在目录），配合 --via-fleet 使用",
+    )
     ap.add_argument(
         "--adb-name",
         dest="adb_name",
@@ -392,12 +411,12 @@ def main() -> int:
                 hint = page_hint(cfg)
                 if hint != "detail":
                     run_task("收结算页", timeout=180, log=print)
-                    go_area(cfg, area)
+                    go_area(cfg, area, via_fleet=args.via_fleet, fleet_state_dir=args.fleet_state_dir, account=args.account or cfg.get("account", ""))
                 n = code.rsplit("-", 1)[-1]
                 ok_detail = run_task(f"进入S-{n}详情", timeout=180, log=print)
                 if not ok_detail:
                     run_task("收结算页", timeout=180, log=print)
-                    go_area(cfg, area)
+                    go_area(cfg, area, via_fleet=args.via_fleet, fleet_state_dir=args.fleet_state_dir, account=args.account or cfg.get("account", ""))
                     ok_detail = run_task(f"进入S-{n}详情", timeout=180, log=print)
                 if not ok_detail:
                     last_err = "PI 没把 S 关详情页点开"
@@ -412,7 +431,7 @@ def main() -> int:
                         last_err = "PI 切突袭失败（突袭可能还没解锁）"
                         continue
             else:
-                go_area(cfg, area)
+                go_area(cfg, area, via_fleet=args.via_fleet, fleet_state_dir=args.fleet_state_dir, account=args.account or cfg.get("account", ""))
             run_id = start_run(
                 post,
                 cfg,
@@ -488,7 +507,7 @@ def main() -> int:
                 continue
             if args.dry_run:
                 try:
-                    go_area(cfg, area)
+                    go_area(cfg, area, via_fleet=args.via_fleet, fleet_state_dir=args.fleet_state_dir, account=args.account or cfg.get("account", ""))
                     jobs = search_jobs(
                         post, code, st["stageName"], args.max_jobs, mode, allow_borrow=allow_borrow
                     )

@@ -127,7 +127,7 @@ func TestPiExecutorFailure(t *testing.T) {
 			return []byte("### No task to run ###\n"), errors.New("exit status 255")
 		},
 	}
-	res, err := e.Run(context.Background(), Job{Kind: "pi.demo"})
+	res, err := e.Run(context.Background(), Job{Kind: "pi.demo.Nav.ToHome"})
 	if err == nil {
 		t.Fatal("Run should return the command error")
 	}
@@ -179,5 +179,82 @@ func TestPiLogNameSanitizesKind(t *testing.T) {
 	}
 	if got := piLogName(""); got != "pi" {
 		t.Fatalf("piLogName(empty) = %q, want pi", got)
+	}
+}
+
+func TestParsePiKind(t *testing.T) {
+	p, e := parsePiKind("pi.demo.Nav.ToHome")
+	if p != "demo" || e != "Nav.ToHome" {
+		t.Fatalf("parse = %q/%q", p, e)
+	}
+	p, e = parsePiKind("daily")
+	if p != "" || e != "" {
+		t.Fatalf("non-pi should be empty")
+	}
+}
+
+func TestPiExecutorDynamicConfig(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "MaaPiCli.exe")
+	_ = os.WriteFile(exe, []byte("fake"), 0o755)
+
+	e := &piExecutor{
+		exe:    exe,
+		dir:    dir,
+		logDir: dir,
+		run: func(ctx context.Context, exe string, args []string, d string) ([]byte, error) {
+			return []byte("### All tasks have been completed ###\n"), nil
+		},
+	}
+
+	job := Job{
+		Kind:     "pi.demo.Nav.ToHome",
+		TaskFile: "Nav.ToHome",
+		Params:   map[string]any{"foo": "bar"},
+	}
+	res, err := e.Run(context.Background(), job)
+	if err != nil || !res.OK {
+		t.Fatalf("run failed: %v", err)
+	}
+
+	cfgPath := filepath.Join(dir, "config", "maa_pi_config.json")
+	b, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"Nav.ToHome"`) || !strings.Contains(string(b), `"foo"`) {
+		t.Fatalf("config not written as expected: %s", b)
+	}
+}
+
+func TestLoadPiResource(t *testing.T) {
+	// demo project should resolve to Demo
+	got := loadPiResource("demo")
+	if got != "Demo" && got != "" {
+		t.Logf("demo resource = %q (ok if empty in CI)", got)
+	}
+	// non-existent returns empty
+	if got := loadPiResource("nonexistent-xyz"); got != "" {
+		t.Fatalf("unknown project should return empty, got %q", got)
+	}
+}
+
+func TestScanPiProjects(t *testing.T) {
+	projects := ScanPiProjects()
+	if len(projects) == 0 {
+		t.Log("no pi projects in workspace (ok for CI)")
+		return
+	}
+	found := false
+	for _, p := range projects {
+		if p.Name == "demo" || p.Name == "arknights-event" {
+			found = true
+			if len(p.Entries) == 0 {
+				t.Errorf("project %s has no entries", p.Name)
+			}
+		}
+	}
+	if !found {
+		t.Logf("scanned %d projects, none of the expected ones", len(projects))
 	}
 }

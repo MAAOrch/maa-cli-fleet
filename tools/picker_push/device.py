@@ -244,3 +244,40 @@ def read_sanity(cfg: dict) -> tuple[int, int] | None:
             if area > best_area:
                 best, best_area = v, area
     return (best, cap) if best is not None else None
+
+
+def swipe_find_stage(cfg: dict, code: str, log=print, max_swipes: int = 8) -> bool:
+    """在当前活动图上左右滑动找关卡标签。找到返回 True（不点）。"""
+    import time, subprocess
+    adb = cfg.get("adb", r"D:\Xiach\MuMuPlayer\nx_main\adb.exe")
+    dev = cfg.get("device", "127.0.0.1:16384")
+    def swipe(x1, y1, x2, y2):
+        subprocess.run([adb, "-s", dev, "shell", "input", "swipe", str(x1), str(y1), str(x2), str(y2), "400"],
+                       capture_output=True, timeout=10)
+        time.sleep(1.0)
+    def has_code() -> bool:
+        try:
+            from device import page_hint
+            return page_hint(cfg) == "map"
+        except Exception:
+            return False
+    # 先原地查
+    if has_code():
+        log(f"    [scroll] {code} 已在视野")
+        return True
+    # 向右滑
+    for i in range(max_swipes):
+        log(f"    [scroll] 向右滑找 {code} ({i+1}/{max_swipes})")
+        swipe(1000, 430, 380, 430)
+        if has_code():
+            return True
+    # 滑回最左再向右
+    log("    [scroll] 滑回最左")
+    for _ in range(max_swipes):
+        swipe(380, 430, 1000, 430)
+    for i in range(max_swipes):
+        log(f"    [scroll] 再向右滑 ({i+1}/{max_swipes})")
+        swipe(1000, 430, 380, 430)
+        if has_code():
+            return True
+    return False

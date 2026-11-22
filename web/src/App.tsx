@@ -34,6 +34,7 @@ import { StatusBadge } from './components/StatusBadge'
 import { StepCard } from './components/StepCard'
 import { TopBar } from './components/TopBar'
 import { Icon } from './components/icons'
+import { PiProjectsPanel } from './components/PiProjectsPanel'
 
 // 本地设置（只影响下一次开始执行，存在浏览器里）。
 const SETTINGS_KEY = 'copilot-picker.settings.v1'
@@ -1799,6 +1800,7 @@ export function App() {
     <div className="app-shell">
       <div className="bg-grid" aria-hidden="true" />
 
+      <PiProjectsPanel />
       <TopBar
         health={health}
         healthLoading={healthLoading}

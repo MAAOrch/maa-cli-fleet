@@ -1,0 +1,141 @@
+# -*- coding: utf-8 -*-
+"""Plan B 游戏理解层。
+
+把方舟基础机制和常见失败模式注入提示词，让 AI 改轴时不只会写 JSON，还知道为什么会漏怪、为什么阻挡不够、为什么突袭比普通难。
+"""
+
+from __future__ import annotations
+
+
+FUNDAMENTALS = """
+## 方舟基础机制（改轴前必读）
+
+### 阻挡与漏怪
+- 敌人沿路径走动，遇到可阻挡干员会停下来打。阻挡数 = 该干员能同时挡住的敌人数。
+- 漏怪：敌人走到蓝门（保护目标）会扣生命。生命归零 = 失败。
+- 重装阻挡高、近卫阻挡中、先锋阻挡低但费用少、特种不阻挡或特殊阻挡。
+- 高台干员（狙击/术师/辅助/医疗）不阻挡，只能放在 `^` 格。
+- 地面干员（先锋/近卫/重装/部分特种）只能放在 `.` 格。
+
+### 费用与节奏
+- 开场费用低，先锋回费是核心。没先锋就下重装 = 后期没费用。
+- `costs` 触发：费用到达指定值时执行。比死等延迟稳。
+- `kills` 触发：击杀数到达时执行。适合「怪物清完一波后再下一个」。
+- 技能 `skill_usage: 2` = 好了就开；`1` = 只开一次；`0` = 不自动开。
+
+### 突袭 vs 普通
+- 突袭敌人血量/攻击更高，部分关有额外机制（浮空、无敌、特殊路径）。
+- 普通能过的轴在突袭常常会漏，因为阻挡不够或输出不够。
+- 突袭优先保证关键点阻挡不断，再考虑输出。
+
+### 常见失败模式
+1. **早期漏怪**：先锋没回够费用，重装/近卫下晚。→ 加先锋或提前下低费阻挡。
+2. **中期穿透**：阻挡点被打爆或阻挡数不够。→ 加阻挡或换更肉的干员。
+3. **后期漏**：输出不够，怪堆越来越多。→ 提前开技能或加输出干员。
+4. **费用卡死**：费用一直满但不下人。→ 检查 `costs` 触发是否过高，或漏了部署动作。
+5. **坐标错**：部署失败。→ 对照网格，高台职业不能下地面，地面职业不能上高台。
+""".strip()
+
+
+STAGE_HINTS = {
+    "main": """
+## 普通关提示
+- 普通关地图简单、敌人少，适合作为 Plan B 起点。
+- 优先保证入口阻挡，再补输出。
+- 开场用先锋回费，不要一上来就下高费干员。
+""".strip(),
+    "s": """
+## S 关提示
+- S 关通常地图窄、敌人密，阻挡压力大。
+- 优先保证入口和蓝门附近有稳定阻挡。
+- 突袭时敌人更肉，同样的轴可能会漏，需要加阻挡或提前开技能。
+""".strip(),
+    "ex": """
+## EX 关提示
+- EX 关地图更大、路径更复杂，容易从侧面漏怪。
+- 注意多个入口，不要把所有干员堆在一侧。
+""".strip(),
+}
+
+
+def inject_knowledge(stage_code: str = "", raid: bool = False) -> str:
+    """返回应注入提示词的游戏知识段落。"""
+    parts = [FUNDAMENTALS]
+    code = (stage_code or "").upper()
+    if "-S-" in code or code.endswith("_S"):
+        parts.append(STAGE_HINTS["s"])
+    elif not "-EX-" in code:
+        parts.append(STAGE_HINTS.get("main", ""))
+        parts.append(STAGE_HINTS["s"])
+    elif "-EX-" in code or "EX" in code:
+        parts.append(STAGE_HINTS["ex"])
+    if raid:
+        parts.append("当前是**突袭**模式。普通过了也不代表突袭能过，阻挡和输出都要留余量。")
+    return "\n\n".join(parts)
+
+
+# 干员职业到角色的粗分类（用于提示词优先推荐）
+OPERATOR_ROLES = {
+    "先锋": "回费",
+    "重装": "阻挡",
+    "近卫": "输出/阻挡",
+    "狙击": "输出",
+    "术师": "输出",
+    "医疗": "治疗",
+    "辅助": "辅助",
+    "特种": "特殊",
+}
+
+def classify_roster(entries: list[dict]) -> dict[str, list[str]]:
+    """把名册按角色分类。entries 需有 name 和 class/职业 字段。"""
+    roles: dict[str, list[str]] = {}
+    for e in entries:
+        name = e.get("name") or e.get("charId") or ""
+        cls = e.get("class") or e.get("profession") or ""
+        role = OPERATOR_ROLES.get(cls, "其他")
+        roles.setdefault(role, []).append(name)
+    return roles
+
+def roster_prompt(entries: list[dict]) -> str:
+    """生成干员角色分类提示段落。"""
+    roles = classify_roster(entries)
+    if not roles:
+        return "## 干员角色\n（名册为空）"
+    lines = ["## 干员角色分类（改轴时优先选择）", ""]
+    order = ["回费", "阻挡", "输出/阻挡", "输出", "治疗", "辅助", "特殊", "其他"]
+    for role in order:
+        names = roles.get(role)
+        if names:
+            lines.append(f"- **{role}**：{', '.join(names[:12])}" + (f" …+{len(names)-12}" if len(names) > 12 else ""))
+    lines.append("")
+    lines.append("建议：开场用 1-2 名回费，入口放 1-2 名阻挡，后排放输出，危险点补治疗。")
+    return "\n".join(lines)
+
+
+def diagnose_report(report: dict) -> str:
+    """根据战报生成失败原因诊断，供下一轮提示使用。"""
+    stars = report.get("stars")
+    kills = report.get("maxKills") or 0
+    result = report.get("result") or ""
+    errors = report.get("asst", {}).get("lastErrors") or []
+    lines = ["## 上一轮诊断", ""]
+    if stars == 3:
+        lines.append("- 已满 3★，可切真理智正式打。")
+        return "\n".join(lines)
+    if stars == 0 or stars is None:
+        lines.append("- 0★ 或未结算：大概率早期漏怪或部署失败。")
+    elif stars == 1:
+        lines.append("- 1★：漏怪较多，阻挡不够或输出不够。")
+    elif stars == 2:
+        lines.append("- 2★：接近通关，少量漏怪，加阻挡或提前开技能可能就过。")
+    if kills and kills < 10:
+        lines.append(f"- 击杀数低（{kills}）：早期就漏了，检查先锋回费和入口阻挡。")
+    elif kills and kills > 30:
+        lines.append(f"- 击杀数较高（{kills}）：输出够，多半是漏怪/阻挡不够。")
+    if any("Deploy" in e for e in errors):
+        lines.append("- 有 Deploy 失败：检查坐标是否可部署、费用是否够、职业与格子是否匹配。")
+    if any("Skill" in e for e in errors):
+        lines.append("- 有技能失败：检查技能序号或触发条件。")
+    if not lines[-1].startswith("-"):
+        lines.append("- 未识别到明确模式，对照关键帧查看崩盘点。")
+    return "\n".join(lines)
