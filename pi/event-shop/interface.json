@@ -1,0 +1,29 @@
+{
+  "interface_version": 2,
+  "name": "event-shop",
+  "label": "Event Shop Nav",
+  "title": "Event Shop Nav",
+  "version": "0.1.0",
+  "controller": [
+    {
+      "name": "Android",
+      "label": "Android (ADB)",
+      "type": "Adb",
+      "display_short_side": 720
+    }
+  ],
+  "resource": [
+    {
+      "name": "Arknights",
+      "label": "Arknights",
+      "path": ["resource"]
+    }
+  ],
+  "task": [
+    {
+      "name": "ShopNav",
+      "label": "导航到活动商店",
+      "entry": "ShopNavStart"
+    }
+  ]
+}

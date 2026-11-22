@@ -1,0 +1,263 @@
+{
+    "Observe": {
+        "recognition": {
+            "type": "DirectHit",
+            "param": {}
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        },
+        "next": [
+            "ObserveHome",
+            "ObserveTerminal",
+            "ObserveMap",
+            "ObservePanel",
+            "ObserveSquad",
+            "ObserveBattle",
+            "ObserveResults",
+            "ObserveFailed",
+            "ObserveUnknown"
+        ],
+        "timeout": 3000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 0
+    },
+    "ObserveHome": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "ui/home_terminal.png",
+                "roi": [
+                    0,
+                    0,
+                    1280,
+                    720
+                ],
+                "threshold": 0.8
+            }
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        },
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 0
+    },
+    "ObserveTerminal": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "ui/terminal_last.png",
+                "roi": [
+                    0,
+                    0,
+                    1280,
+                    720
+                ],
+                "threshold": 0.8
+            }
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        },
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 0
+    },
+    "ObserveMap": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "ui/map_progress.png",
+                "roi": [
+                    0,
+                    0,
+                    1280,
+                    720
+                ],
+                "threshold": 0.8
+            }
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        },
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 0
+    },
+    "ObservePanel": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "ui/panel_start.png",
+                "roi": [
+                    0,
+                    0,
+                    1280,
+                    720
+                ],
+                "threshold": 0.8
+            }
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        },
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 0
+    },
+    "ObserveSquad": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "ui/squad_start.png",
+                "roi": [
+                    0,
+                    0,
+                    1280,
+                    720
+                ],
+                "threshold": 0.8
+            }
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        },
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 0
+    },
+    "ObserveBattle": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "ui/battle_hud.png",
+                "roi": [
+                    0,
+                    0,
+                    1280,
+                    720
+                ],
+                "threshold": 0.8
+            }
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        },
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 0
+    },
+    "ObserveResults": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "results/action_end.png",
+                "roi": [
+                    0,
+                    0,
+                    1280,
+                    720
+                ],
+                "threshold": 0.8
+            }
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        },
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 0
+    },
+    "ObserveFailed": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "results/battle_failed.png",
+                "roi": [
+                    0,
+                    0,
+                    1280,
+                    720
+                ],
+                "threshold": 0.8
+            }
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        },
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 0
+    },
+    "ObserveUnknown": {
+        "recognition": {
+            "type": "DirectHit",
+            "param": {}
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        },
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 0
+    },
+    "Continue": {
+        "recognition": {
+            "type": "DirectHit",
+            "param": {}
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        },
+        "next": [
+            "ContinueResultsClick",
+            "ObserveUnknown"
+        ],
+        "timeout": 3000,
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 0
+    },
+    "ContinueResultsClick": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "results/action_end.png",
+                "roi": [
+                    0,
+                    0,
+                    1280,
+                    720
+                ],
+                "threshold": 0.8
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [
+                    640,
+                    660,
+                    1,
+                    1
+                ]
+            }
+        },
+        "rate_limit": 0,
+        "pre_delay": 0,
+        "post_delay": 0
+    }
+}

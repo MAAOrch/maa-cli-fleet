@@ -1,0 +1,120 @@
+{
+    "ShopNavStart": {
+        "doc": "入口：任意界面开始，按优先级找锚点",
+        "recognition": {
+            "type": "DirectHit",
+            "param": {}
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        },
+        "next": [
+            "ShopNavInShop",
+            "ShopNavEntry",
+            "ShopNavMainBanner",
+            "ShopNavTerminalBanner"
+        ]
+    },
+    "ShopNavEntry": {
+        "doc": "活动页的「劳工配给所」入口：只匹配白色文字，绿底掩码忽略光效动画，命中即点进商店",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "EventShop/entry_green.png",
+                "roi": [
+                    0,
+                    340,
+                    460,
+                    360
+                ],
+                "threshold": 0.85,
+                "green_mask": true
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "post_delay": 4000,
+        "timeout": 8000,
+        "next": [
+            "ShopNavInShop"
+        ]
+    },
+    "ShopNavInShop": {
+        "doc": "已在商店内（店头 或 商品购买弹窗的支付按钮，两者任一命中）",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "EventShop/shop_mark.png",
+                    "EventShop/dialog_pay.png"
+                ],
+                "roi": [
+                    0,
+                    0,
+                    1280,
+                    720
+                ],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        },
+        "timeout": 5000
+    },
+    "ShopNavMainBanner": {
+        "doc": "主界面右侧当期活动横幅",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "EventShop/banner.png",
+                "roi": [
+                    900,
+                    130,
+                    380,
+                    220
+                ],
+                "threshold": 0.8
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "post_delay": 4000,
+        "timeout": 15000,
+        "next": [
+            "ShopNavEntry",
+            "ShopNavTerminalBanner"
+        ]
+    },
+    "ShopNavTerminalBanner": {
+        "doc": "终端页里的活动横幅",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "EventShop/terminal_banner.png",
+                "roi": [
+                    480,
+                    60,
+                    480,
+                    300
+                ],
+                "threshold": 0.8
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "post_delay": 5000,
+        "timeout": 15000,
+        "next": [
+            "ShopNavEntry"
+        ]
+    }
+}

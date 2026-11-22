@@ -1,0 +1,862 @@
+{
+  "RaEnterStart": {
+    "doc": "入口：终端页（大厅）",
+    "recognition": {
+      "type": "DirectHit",
+      "param": {}
+    },
+    "action": {
+      "type": "DoNothing",
+      "param": {}
+    },
+    "next": [
+      "RaCard",
+      "RaCardHome",
+      "RaHomeToTerminal",
+      "RaGoHome"
+    ]
+  },
+  "RaCard": {
+    "doc": "terminal page: right column RA list entry",
+    "recognition": {
+      "type": "TemplateMatch",
+      "param": {
+        "template": "RA/activity_card.png",
+        "roi": [
+          900,
+          280,
+          380,
+          180
+        ],
+        "threshold": 0.75
+      }
+    },
+    "action": {
+      "type": "Click",
+      "param": {}
+    },
+    "post_delay": 7000,
+    "timeout": 20000,
+    "next": [
+      "RaBack1"
+    ]
+  },
+  "RaBack1": {
+    "doc": "生息入口页 → 左上返回 → 主题列表",
+    "recognition": {
+      "type": "DirectHit",
+      "param": {}
+    },
+    "action": {
+      "type": "Click",
+      "param": {
+        "target": [
+          20,
+          10,
+          50,
+          50
+        ]
+      }
+    },
+    "post_delay": 4500,
+    "next": [
+      "RaPickSands"
+    ]
+  },
+  "RaPickSands": {
+    "doc": "主题列表：选左一 THE SANDS 熱砂秘境（沙洲遗闻）",
+    "recognition": {
+      "type": "DirectHit",
+      "param": {}
+    },
+    "action": {
+      "type": "Click",
+      "param": {
+        "target": [
+          100,
+          220,
+          220,
+          320
+        ]
+      }
+    },
+    "post_delay": 2500,
+    "next": [
+      "RaThemeGo"
+    ]
+  },
+  "RaThemeGo": {
+    "doc": "点右下「テーマへ」进入沙洲遗闻大厅",
+    "recognition": {
+      "type": "DirectHit",
+      "param": {}
+    },
+    "action": {
+      "type": "Click",
+      "param": {
+        "target": [
+          1040,
+          600,
+          215,
+          65
+        ]
+      }
+    },
+    "post_delay": 12000,
+    "next": [
+      "RaEnterDone"
+    ]
+  },
+  "RaEnterDone": {
+    "doc": "结束：应停在 THE SANDS 大厅",
+    "recognition": {
+      "type": "DirectHit",
+      "param": {}
+    },
+    "action": {
+      "type": "DoNothing",
+      "param": {}
+    }
+  },
+  "RaInSands": {
+    "doc": "断言：在沙洲遗闻大厅（繁栄の成果徽标，与存档状态无关）",
+    "recognition": {
+      "type": "TemplateMatch",
+      "param": {
+        "template": "RA/sands_lobby_badge.png",
+        "roi": [
+          20,
+          600,
+          400,
+          90
+        ],
+        "threshold": 0.8
+      }
+    },
+    "action": {
+      "type": "DoNothing",
+      "param": {}
+    }
+  },
+  "RaContinue": {
+    "doc": "大厅点「演算継続」进入沙洲遗闻局内",
+    "recognition": {
+      "type": "TemplateMatch",
+      "param": {
+        "template": "RA/sands_lobby.png",
+        "roi": [
+          1000,
+          590,
+          280,
+          130
+        ],
+        "threshold": 0.8
+      }
+    },
+    "action": {
+      "type": "Click",
+      "param": {}
+    },
+    "post_delay": 12000,
+    "timeout": 20000,
+    "next": [
+      "RaInRun"
+    ]
+  },
+  "RaInRun": {
+    "doc": "断言：已在沙洲遗闻局内（识别右下角「...」菜单按钮）",
+    "recognition": {
+      "type": "TemplateMatch",
+      "param": {
+        "template": "RA/ra_menu_dots.png",
+        "roi": [
+          900,
+          580,
+          380,
+          140
+        ],
+        "threshold": 0.8
+      }
+    },
+    "action": {
+      "type": "DoNothing",
+      "param": {}
+    }
+  },
+  "RaOpenMenu": {
+    "doc": "局内右下角 ... 菜单按钮（模板来自 MAA Reclamation2DeleteArchiveEnter.png）",
+    "recognition": {
+      "type": "TemplateMatch",
+      "param": {
+        "template": "RA/ra_menu_dots.png",
+        "roi": [
+          900,
+          580,
+          380,
+          140
+        ],
+        "threshold": 0.75
+      }
+    },
+    "action": {
+      "type": "Click",
+      "param": {}
+    },
+    "post_delay": 1500
+  },
+  "RaDeleteMenu": {
+    "doc": "局内 ... 菜单 → データ削除",
+    "recognition": {
+      "type": "TemplateMatch",
+      "param": {
+        "template": "RA/ra_menu_delete.png",
+        "roi": [
+          1000,
+          520,
+          200,
+          140
+        ],
+        "threshold": 0.8
+      }
+    },
+    "action": {
+      "type": "Click",
+      "param": {
+        "target": [
+          1085,
+          560,
+          45,
+          45
+        ]
+      }
+    },
+    "post_delay": 2500
+  },
+  "RaDeleteYes": {
+    "doc": "删档确认框 → 点「削除する」(唯一不可逆点，由脚本显式调用)",
+    "recognition": {
+      "type": "TemplateMatch",
+      "param": {
+        "template": "RA/ra_delete_yes.png",
+        "roi": [
+          600,
+          420,
+          500,
+          120
+        ],
+        "threshold": 0.8
+      }
+    },
+    "action": {
+      "type": "Click",
+      "param": {}
+    },
+    "post_delay": 4000
+  },
+  "RaDeleteStart": {
+    "doc": "删档链入口：局内主界面；若在结算弹窗则先点确定",
+    "recognition": {
+      "type": "DirectHit",
+      "param": {}
+    },
+    "action": {
+      "type": "DoNothing",
+      "param": {}
+    },
+    "next": [
+      "RaDeleteDots",
+      "RaDismiss"
+    ]
+  },
+  "RaDeletePick": {
+    "doc": "菜单 → データ削除",
+    "recognition": {
+      "type": "TemplateMatch",
+      "param": {
+        "template": "RA/ra_menu_delete.png",
+        "roi": [
+          1000,
+          520,
+          200,
+          140
+        ],
+        "threshold": 0.8
+      }
+    },
+    "action": {
+      "type": "Click",
+      "param": {
+        "target": [
+          1085,
+          560,
+          45,
+          45
+        ]
+      }
+    },
+    "post_delay": 2500,
+    "timeout": 10000,
+    "next": [
+      "RaDeleteYes1"
+    ]
+  },
+  "RaDeleteYes1": {
+    "doc": "第一次确认 → 削除する",
+    "recognition": {
+      "type": "TemplateMatch",
+      "param": {
+        "template": "RA/ra_delete_yes.png",
+        "roi": [
+          600,
+          420,
+          500,
+          120
+        ],
+        "threshold": 0.8
+      }
+    },
+    "action": {
+      "type": "Click",
+      "param": {}
+    },
+    "post_delay": 3000,
+    "timeout": 10000,
+    "next": [
+      "RaDeleteYes2"
+    ]
+  },
+  "RaDeleteYes2": {
+    "doc": "第二次确认（不可逆）→ 削除する",
+    "recognition": {
+      "type": "TemplateMatch",
+      "param": {
+        "template": "RA/ra_delete_yes.png",
+        "roi": [
+          600,
+          420,
+          500,
+          120
+        ],
+        "threshold": 0.8
+      }
+    },
+    "action": {
+      "type": "Click",
+      "param": {}
+    },
+    "post_delay": 7000,
+    "timeout": 10000,
+    "next": [
+      "RaDeleteDone"
+    ]
+  },
+  "RaDeleteDone": {
+    "doc": "断言：删档后回到大厅（繁栄の成果徽标）",
+    "recognition": {
+      "type": "TemplateMatch",
+      "param": {
+        "template": "RA/sands_lobby_badge.png",
+        "roi": [
+          20,
+          600,
+          400,
+          90
+        ],
+        "threshold": 0.8
+      }
+    },
+    "action": {
+      "type": "DoNothing",
+      "param": {}
+    },
+    "timeout": 15000
+  },
+  "RaHasSave": {
+    "doc": "lobby has a save: the button reads 演算継続 (text-only crop, thr 0.9)",
+    "recognition": {
+      "type": "TemplateMatch",
+      "param": {
+        "template": "RA/btn_continue.png",
+        "roi": [
+          1100,
+          610,
+          180,
+          80
+        ],
+        "threshold": 0.9
+      }
+    },
+    "action": {
+      "type": "DoNothing",
+      "param": {}
+    }
+  },
+  "RaDeleteDots": {
+    "doc": "局内右下角 ... 菜单",
+    "recognition": {
+      "type": "TemplateMatch",
+      "param": {
+        "template": "RA/ra_menu_dots.png",
+        "roi": [
+          900,
+          580,
+          380,
+          140
+        ],
+        "threshold": 0.75
+      }
+    },
+    "action": {
+      "type": "Click",
+      "param": {}
+    },
+    "post_delay": 1500,
+    "timeout": 6000,
+    "next": [
+      "RaDeletePick"
+    ]
+  },
+  "RaDismiss": {
+    "doc": "结算/提示弹窗：点确定后重试 ... 菜单",
+    "recognition": {
+      "type": "TemplateMatch",
+      "param": {
+        "template": "RA/ra_ok_check.png",
+        "roi": [
+          520,
+          520,
+          220,
+          160
+        ],
+        "threshold": 0.8
+      }
+    },
+    "action": {
+      "type": "Click",
+      "param": {}
+    },
+    "post_delay": 2500,
+    "timeout": 6000,
+    "next": [
+      "RaDeleteDots"
+    ]
+  },
+  "RaHomeToTerminal": {
+    "doc": "兜底：主界面点右上「端末」进入终端页",
+    "recognition": {
+      "type": "TemplateMatch",
+      "param": {
+        "template": "RA/home_terminal.png",
+        "roi": [
+          820,
+          90,
+          300,
+          160
+        ],
+        "threshold": 0.8
+      }
+    },
+    "action": {
+      "type": "Click",
+      "param": {}
+    },
+    "post_delay": 6000,
+    "timeout": 8000,
+    "next": [
+      "RaCard"
+    ]
+  },
+  "RaAdvance1": {
+    "doc": "in-run dialogue box: one click to advance (JP intro after a fresh run)",
+    "recognition": {
+      "type": "DirectHit",
+      "param": {}
+    },
+    "action": {
+      "type": "Click",
+      "param": {
+        "target": [
+          560,
+          515,
+          400,
+          80
+        ]
+      }
+    },
+    "post_delay": 1500,
+    "next": [
+      "RaAdvance2"
+    ]
+  },
+  "RaAdvance2": {
+    "doc": "in-run dialogue box: one click to advance (JP intro after a fresh run)",
+    "recognition": {
+      "type": "DirectHit",
+      "param": {}
+    },
+    "action": {
+      "type": "Click",
+      "param": {
+        "target": [
+          560,
+          515,
+          400,
+          80
+        ]
+      }
+    },
+    "post_delay": 1500,
+    "next": [
+      "RaAdvance3"
+    ]
+  },
+  "RaAdvance3": {
+    "doc": "in-run dialogue box: one click to advance (JP intro after a fresh run)",
+    "recognition": {
+      "type": "DirectHit",
+      "param": {}
+    },
+    "action": {
+      "type": "Click",
+      "param": {
+        "target": [
+          560,
+          515,
+          400,
+          80
+        ]
+      }
+    },
+    "post_delay": 1500,
+    "next": [
+      "RaInRun"
+    ]
+  },
+  "RaGoHome": {
+    "doc": "on a sub page (base etc.): click the home icon in the top bar to reach the main screen",
+    "recognition": {
+      "type": "TemplateMatch",
+      "param": {
+        "template": "RA/home_icon.png",
+        "roi": [
+          150,
+          0,
+          300,
+          80
+        ],
+        "threshold": 0.75
+      }
+    },
+    "action": {
+      "type": "Click",
+      "param": {}
+    },
+    "post_delay": 3000,
+    "timeout": 20000,
+    "next": [
+      "RaTerminalOverlay"
+    ]
+  },
+  "RaTerminalOverlay": {
+    "doc": "nav overlay (opened by the top bar icon on sub pages): click the terminal entry",
+    "recognition": {
+      "type": "TemplateMatch",
+      "param": {
+        "template": "RA/terminal_label.png",
+        "roi": [
+          440,
+          60,
+          200,
+          110
+        ],
+        "threshold": 0.75
+      }
+    },
+    "action": {
+      "type": "Click",
+      "param": {}
+    },
+    "post_delay": 3000,
+    "timeout": 20000,
+    "next": [
+      "RaCard",
+      "RaHomeToTerminal",
+      "RaGoHome"
+    ]
+  },
+  "RaCardHome": {
+    "doc": "home screen: RA thumbnail card at the top right of the terminal panel",
+    "recognition": {
+      "type": "TemplateMatch",
+      "param": {
+        "template": "RA/card_home.png",
+        "roi": [
+          1000,
+          60,
+          280,
+          260
+        ],
+        "threshold": 0.75
+      }
+    },
+    "action": {
+      "type": "Click",
+      "param": {}
+    },
+    "post_delay": 7000,
+    "timeout": 20000,
+    "next": [
+      "RaBack1"
+    ]
+  },
+  "RaTutorial": {
+    "doc": "day-1 tutorial map: the highlighted facility card is on screen -> tap it",
+    "recognition": {
+      "type": "TemplateMatch",
+      "param": {
+        "template": "RA/tut_facility.png",
+        "roi": [
+          540,
+          260,
+          220,
+          160
+        ],
+        "threshold": 0.8
+      }
+    },
+    "action": {
+      "type": "Click",
+      "param": {}
+    },
+    "post_delay": 2500,
+    "timeout": 8000,
+    "next": [
+      "RaTutStart"
+    ]
+  },
+  "RaTutStart": {
+    "doc": "facility panel: tap the start button",
+    "recognition": {
+      "type": "TemplateMatch",
+      "param": {
+        "template": "RA/tut_start.png",
+        "roi": [
+          980,
+          500,
+          300,
+          140
+        ],
+        "threshold": 0.8
+      }
+    },
+    "action": {
+      "type": "Click",
+      "param": {}
+    },
+    "post_delay": 4000,
+    "timeout": 10000,
+    "next": [
+      "RaTutStory1"
+    ]
+  },
+  "RaTutStory1": {
+    "doc": "story cutscene: tap to advance (bounded chain, one batch per cycle round)",
+    "recognition": {
+      "type": "DirectHit",
+      "param": {}
+    },
+    "action": {
+      "type": "Click",
+      "param": {
+        "target": [
+          995,
+          655,
+          40,
+          40
+        ]
+      }
+    },
+    "post_delay": 1300,
+    "next": [
+      "RaTutStory2"
+    ]
+  },
+  "RaTutStory2": {
+    "doc": "story cutscene: tap to advance (bounded chain, one batch per cycle round)",
+    "recognition": {
+      "type": "DirectHit",
+      "param": {}
+    },
+    "action": {
+      "type": "Click",
+      "param": {
+        "target": [
+          995,
+          655,
+          40,
+          40
+        ]
+      }
+    },
+    "post_delay": 1300,
+    "next": [
+      "RaTutStory3"
+    ]
+  },
+  "RaTutStory3": {
+    "doc": "story cutscene: tap to advance (bounded chain, one batch per cycle round)",
+    "recognition": {
+      "type": "DirectHit",
+      "param": {}
+    },
+    "action": {
+      "type": "Click",
+      "param": {
+        "target": [
+          995,
+          655,
+          40,
+          40
+        ]
+      }
+    },
+    "post_delay": 1300,
+    "next": [
+      "RaTutStory4"
+    ]
+  },
+  "RaTutStory4": {
+    "doc": "story cutscene: tap to advance (bounded chain, one batch per cycle round)",
+    "recognition": {
+      "type": "DirectHit",
+      "param": {}
+    },
+    "action": {
+      "type": "Click",
+      "param": {
+        "target": [
+          995,
+          655,
+          40,
+          40
+        ]
+      }
+    },
+    "post_delay": 1300,
+    "next": [
+      "RaTutStory5"
+    ]
+  },
+  "RaTutStory5": {
+    "doc": "story cutscene: tap to advance (bounded chain, one batch per cycle round)",
+    "recognition": {
+      "type": "DirectHit",
+      "param": {}
+    },
+    "action": {
+      "type": "Click",
+      "param": {
+        "target": [
+          995,
+          655,
+          40,
+          40
+        ]
+      }
+    },
+    "post_delay": 1300,
+    "next": [
+      "RaTutStory6"
+    ]
+  },
+  "RaTutStory6": {
+    "doc": "story cutscene: tap to advance (bounded chain, one batch per cycle round)",
+    "recognition": {
+      "type": "DirectHit",
+      "param": {}
+    },
+    "action": {
+      "type": "Click",
+      "param": {
+        "target": [
+          995,
+          655,
+          40,
+          40
+        ]
+      }
+    },
+    "post_delay": 1300,
+    "next": [
+      "RaTutStory7"
+    ]
+  },
+  "RaTutStory7": {
+    "doc": "story cutscene: tap to advance (bounded chain, one batch per cycle round)",
+    "recognition": {
+      "type": "DirectHit",
+      "param": {}
+    },
+    "action": {
+      "type": "Click",
+      "param": {
+        "target": [
+          995,
+          655,
+          40,
+          40
+        ]
+      }
+    },
+    "post_delay": 1300,
+    "next": [
+      "RaTutStory8"
+    ]
+  },
+  "RaTutStory8": {
+    "doc": "story cutscene: tap to advance (bounded chain, one batch per cycle round)",
+    "recognition": {
+      "type": "DirectHit",
+      "param": {}
+    },
+    "action": {
+      "type": "Click",
+      "param": {
+        "target": [
+          995,
+          655,
+          40,
+          40
+        ]
+      }
+    },
+    "post_delay": 1300,
+    "next": [
+      "RaInRun",
+      "RaInSands",
+      "RaTutorial"
+    ]
+  },
+  "RaLeaveRun": {
+    "doc": "inside a run: tap the back arrow (top left) to return to the RA lobby",
+    "recognition": {
+      "type": "DirectHit",
+      "param": {}
+    },
+    "action": {
+      "type": "Click",
+      "param": {
+        "target": [
+          15,
+          10,
+          60,
+          55
+        ]
+      }
+    },
+    "post_delay": 4000,
+    "next": [
+      "RaInSands"
+    ]
+  }
+}

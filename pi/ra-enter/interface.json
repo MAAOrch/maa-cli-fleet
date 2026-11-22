@@ -1,0 +1,81 @@
+{
+  "interface_version": 2,
+  "name": "ra-enter",
+  "label": "RA Enter",
+  "title": "Reclamation Enter",
+  "version": "0.1.0",
+  "controller": [
+    {
+      "name": "Android",
+      "label": "Android (ADB)",
+      "type": "Adb",
+      "display_short_side": 720
+    }
+  ],
+  "resource": [
+    {
+      "name": "Arknights",
+      "label": "Arknights",
+      "path": [
+        "resource"
+      ]
+    }
+  ],
+  "task": [
+    {
+      "name": "RaEnter",
+      "label": "Enter RA new foundation",
+      "entry": "RaEnterStart"
+    },
+    {
+      "name": "RaInSands",
+      "label": "Assert in Sands lobby",
+      "entry": "RaInSands"
+    },
+    {
+      "name": "RaHasSave",
+      "label": "Check if Sands lobby has save",
+      "entry": "RaHasSave"
+    },
+    {
+      "name": "RaContinue",
+      "label": "Continue Sands run",
+      "entry": "RaContinue"
+    },
+    {
+      "name": "RaDeleteStart",
+      "label": "Delete current RA save",
+      "entry": "RaDeleteStart"
+    },
+    {
+      "name": "RaOpenMenu",
+      "label": "Open in-run menu",
+      "entry": "RaOpenMenu"
+    },
+    {
+      "name": "RaDeleteMenu",
+      "label": "Click delete in menu",
+      "entry": "RaDeleteMenu"
+    },
+    {
+      "name": "RaDeleteYes",
+      "label": "Confirm delete save",
+      "entry": "RaDeleteYes"
+    },
+    {
+      "name": "RaAdvance",
+      "label": "Advance fresh-run intro dialogue",
+      "entry": "RaAdvance1"
+    },
+    {
+      "name": "RaTutorial",
+      "label": "Run day-1 tutorial chain",
+      "entry": "RaTutorial"
+    },
+    {
+      "name": "RaLeaveRun",
+      "label": "Leave run back to lobby",
+      "entry": "RaLeaveRun"
+    }
+  ]
+}

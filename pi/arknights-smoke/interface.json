@@ -1,0 +1,45 @@
+{
+  "interface_version": 2,
+  "name": "arknights-smoke",
+  "label": "Arknights Smoke",
+  "title": "Arknights Smoke",
+  "version": "0.1.0",
+  "description": "MaaFw pipeline smoke test on the local MuMu: recognize the current screen.",
+  "license": "AGPL-3.0",
+  "controller": [
+    {
+      "name": "Android",
+      "label": "Android (ADB)",
+      "type": "Adb",
+      "display_short_side": 720
+    }
+  ],
+  "resource": [
+    {
+      "name": "Arknights",
+      "label": "Arknights",
+      "path": ["resource"]
+    }
+  ],
+  "task": [
+    {
+      "name": "Observe",
+      "label": "Observe current screen",
+      "entry": "Observe",
+      "default_check": true,
+      "description": "TemplateMatch the known screens; DoNothing."
+    },
+    {
+      "name": "Continue",
+      "label": "Leave the results screen",
+      "entry": "Continue",
+      "description": "If the results screen is visible, click continue."
+    },
+    {
+      "name": "Nav010",
+      "label": "Navigate to 0-10 squad",
+      "entry": "Nav010Start",
+      "description": "Map -> 0-10 panel -> squad; stops at squad (no sanity spent)."
+    }
+  ]
+}
