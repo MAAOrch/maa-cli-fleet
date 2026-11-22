@@ -110,3 +110,32 @@ def roster_prompt(entries: list[dict]) -> str:
     lines.append("")
     lines.append("建议：开场用 1-2 名回费，入口放 1-2 名阻挡，后排放输出，危险点补治疗。")
     return "\n".join(lines)
+
+
+def diagnose_report(report: dict) -> str:
+    """根据战报生成失败原因诊断，供下一轮提示使用。"""
+    stars = report.get("stars")
+    kills = report.get("maxKills") or 0
+    result = report.get("result") or ""
+    errors = report.get("asst", {}).get("lastErrors") or []
+    lines = ["## 上一轮诊断", ""]
+    if stars == 3:
+        lines.append("- 已满 3★，可切真理智正式打。")
+        return "\n".join(lines)
+    if stars == 0 or stars is None:
+        lines.append("- 0★ 或未结算：大概率早期漏怪或部署失败。")
+    elif stars == 1:
+        lines.append("- 1★：漏怪较多，阻挡不够或输出不够。")
+    elif stars == 2:
+        lines.append("- 2★：接近通关，少量漏怪，加阻挡或提前开技能可能就过。")
+    if kills and kills < 10:
+        lines.append(f"- 击杀数低（{kills}）：早期就漏了，检查先锋回费和入口阻挡。")
+    elif kills and kills > 30:
+        lines.append(f"- 击杀数较高（{kills}）：输出够，多半是漏怪/阻挡不够。")
+    if any("Deploy" in e for e in errors):
+        lines.append("- 有 Deploy 失败：检查坐标是否可部署、费用是否够、职业与格子是否匹配。")
+    if any("Skill" in e for e in errors):
+        lines.append("- 有技能失败：检查技能序号或触发条件。")
+    if not lines[-1].startswith("-"):
+        lines.append("- 未识别到明确模式，对照关键帧查看崩盘点。")
+    return "\n".join(lines)

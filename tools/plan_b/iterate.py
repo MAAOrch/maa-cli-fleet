@@ -29,7 +29,7 @@ sys.path.insert(0, str(REPO / "tools" / "picker_push"))
 sys.path.insert(0, str(REPO / "tools" / "plan_b"))
 
 import battle_observer as obs
-from game_knowledge import inject_knowledge  # noqa: E402
+from game_knowledge import inject_knowledge, diagnose_report  # noqa: E402
 import validator as val  # noqa: E402
 from pi_runner import run_task  # noqa: E402
 
@@ -139,7 +139,8 @@ def run_round(bundle: pathlib.Path, ctx: dict, candidate: pathlib.Path, args) ->
 
 def write_next_prompt(bundle: pathlib.Path, report: dict) -> None:
     rd = pathlib.Path(report["candidate"]).parent
-    lines = ["# Plan B 下一轮改轴提示", "", inject_knowledge(), "",
+    diag = diagnose_report(report)
+    lines = ["# Plan B 下一轮改轴提示", "", inject_knowledge(), "", diag, "",
              f"- 上一轮：stars={report['stars']}（{report['starsReason']}），result={report['result']}",
              f"- 最终击杀：{report['maxKills']}", f"- 战报：`{rd / 'battle_report.json'}`",
              f"- 关键帧目录：`{rd / 'frames'}`", "",
