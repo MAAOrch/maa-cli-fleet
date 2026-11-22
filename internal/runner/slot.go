@@ -31,7 +31,7 @@ func (r *Runner) runTask(t *Task) {
 	log.Printf("[%s] 开始 %s（%s，第 %d 次）", t.Key, acc.Name, t.Kind, t.Attempts)
 
 	// 未知 Kind 必须大声报错并停：不许静默跳过，也不许先动设备再发现没有执行器。
-	ex, ok := r.ensureExecutors().For(t.Kind)
+	ex, ok := r.ensureExecutors().ForPrefix(t.Kind)
 	if !ok {
 		r.failTerminal(t, "没有注册执行器："+t.Kind)
 		log.Printf("[%s] 没有注册执行器：%s（不发车）", t.Key, t.Kind)

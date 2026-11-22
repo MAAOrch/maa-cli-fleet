@@ -121,12 +121,12 @@ func TestNewRegistersPiDemo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	ex, ok := r.executors.For("pi.demo")
+	ex, ok := r.executors.ForPrefix("pi.demo.nav")
 	if !ok {
-		t.Fatal("pi.demo should be registered when piExe is set")
+		t.Fatal("pi.* should be registered when piExe is set")
 	}
 	if ex.Name() != "maa-pi-cli" {
-		t.Fatalf("pi.demo executor = %q, want maa-pi-cli", ex.Name())
+		t.Fatalf("pi executor = %q, want maa-pi-cli", ex.Name())
 	}
 }
 
@@ -165,7 +165,7 @@ func TestNewRegistersMaaDailyAndAnn(t *testing.T) {
 	if got := r.executors.Kinds(); !slices.Equal(got, []string{"ann", "daily"}) {
 		t.Fatalf("registered kinds = %v, want [ann daily]", got)
 	}
-	if _, ok := r.executors.For("rogue"); ok {
+	if _, ok := r.executors.ForPrefix("rogue"); ok {
 		t.Fatal("Phase 1 keeps the resident lane on startMaa; rogue must not be registered yet")
 	}
 }
