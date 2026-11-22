@@ -95,6 +95,18 @@
       "label": "补充理智（用药剂，需 OCR 到理智合剂才点）",
       "entry": "NavRefillUseStart",
       "description": "理智不足弹层已弹出时，用药剂补满一档；必须 OCR 到底部「理智合剂」确认语才点 ✓，认不到就不动（防碎石）。驱动 --max-potions>0 才用，默认不走。"
+    },
+    {
+      "name": "进入演习",
+      "label": "进入演习（免费试错）",
+      "entry": "NavDrillStart",
+      "description": "从关卡详情页点「演习」进入编队页（演习模式，开打只耗演习券不耗理智）。Plan B 自研轴试错用。"
+    },
+    {
+      "name": "退出演习",
+      "label": "退出演习/编队页",
+      "entry": "NavDrillExit",
+      "description": "从演习编队页返回上一页（Plan B 试错结束后清理界面用）。"
     }
   ]
 }

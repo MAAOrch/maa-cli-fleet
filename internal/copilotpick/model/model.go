@@ -123,6 +123,11 @@ type RunOptions struct {
 	MaxAttempts        int    `json:"maxAttempts"`
 	SupportUnitUsage   int    `json:"supportUnitUsage"` // 0 不用助战
 	TimeoutMin         int    `json:"timeoutMin"`
+	// CopilotFile 直接跑本地 copilot JSON（Plan B 自研轴用）：给了就不从作业站下载，
+	// 仍走 ManualMode 单文件 copilot 路径。JobIDs 只需占位一个（如 0）。
+	CopilotFile string `json:"copilotFile,omitempty"`
+	// NoProgress 只打不记台账（演习试错专用，避免把演习结果写进正式进度）。
+	NoProgress bool `json:"noProgress,omitempty"`
 }
 
 // RunEvent 是一条执行事件（日志/阶段/尝试）。

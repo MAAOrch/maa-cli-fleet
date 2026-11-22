@@ -2151,5 +2151,91 @@
         "next": [
             "NavRefillConfirm"
         ]
+    },
+    "NavDrillStart": {
+        "doc": "关卡详情页点「演习」→ 编队页（演习模式；供 Plan B 免费试错）",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "EventNav/detail_startbtn.png",
+                    "EventNav/detail_startbtn_raid.png"
+                ],
+                "roi": [
+                    1035,
+                    600,
+                    245,
+                    115
+                ],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [
+                    900,
+                    665,
+                    1,
+                    1
+                ]
+            }
+        },
+        "post_delay": 2500,
+        "next": [
+            "NavDrillReady"
+        ]
+    },
+    "NavDrillReady": {
+        "doc": "演习/编队页就绪（右上「快捷编队」按钮）",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "EventNav/drill_squad.png"
+                ],
+                "roi": [
+                    820,
+                    0,
+                    320,
+                    100
+                ],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "DoNothing",
+            "param": {}
+        }
+    },
+    "NavDrillExit": {
+        "doc": "从演习/编队页返回（左上返回）",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "EventNav/drill_squad.png"
+                ],
+                "roi": [
+                    820,
+                    0,
+                    320,
+                    100
+                ],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [
+                    45,
+                    42,
+                    1,
+                    1
+                ]
+            }
+        },
+        "post_delay": 1500
     }
 }

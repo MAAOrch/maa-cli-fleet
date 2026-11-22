@@ -122,7 +122,7 @@ func (r *Run) run() {
 		r.setStage(si+1, len(stages), st.StageCode, st.StageName)
 		r.event("stage", "status", fmt.Sprintf("第 %d/%d 关：%s", si+1, len(stages), st.StageCode))
 		// 台账里已经 3 星的普通关别再打——白花理智，还会把「已完成」搞糊。
-		if stars := r.m.StageStars(st.StageCode, "normal"); stars == 3 && !stageIsRaidOnly(st) {
+		if stars := r.m.StageStars(st.StageCode, "normal"); stars == 3 && !stageIsRaidOnly(st) && !r.opts.NoProgress && r.opts.CopilotFile == "" {
 			r.event("warn", "stage", "台账里这关普通已经 3 星，重复打只会浪费理智（要打突袭请只排突袭作业）")
 		}
 
@@ -174,11 +174,24 @@ func (r *Run) run() {
 				}
 			}
 
-			content, err := r.m.Prts().FetchJobContent(ctx, id)
-			if err != nil {
-				lastErr = fmt.Sprintf("下载作业 #%d 失败：%v", id, err)
-				r.event("warn", "attempt", lastErr+"，换下一份")
-				continue
+			var content string
+			if r.opts.CopilotFile != "" {
+				// Plan B：直接吃本地自己写的作业 JSON，不下载、不导航。
+				b, ferr := os.ReadFile(r.opts.CopilotFile)
+				if ferr != nil {
+					lastErr = fmt.Sprintf("读本地作业失败：%v", ferr)
+					r.event("error", "attempt", lastErr)
+					continue
+				}
+				content = string(b)
+			} else {
+				var err error
+				content, err = r.m.Prts().FetchJobContent(ctx, id)
+				if err != nil {
+					lastErr = fmt.Sprintf("下载作业 #%d 失败：%v", id, err)
+					r.event("warn", "attempt", lastErr+"，换下一份")
+					continue
+				}
 			}
 			r.setJob(id, ext.JobTitle(content))
 
@@ -227,7 +240,12 @@ func (r *Run) run() {
 				if raidSet[id] {
 					mode = "raid"
 				}
-				stars := r.recordProgress(st.StageCode, mode, r.opts.OnMap)
+				stars := 3
+				if r.opts.NoProgress {
+					r.event("info", "attempt", "演习/试错模式：本次通关不记台账")
+				} else {
+					stars = r.recordProgress(st.StageCode, mode, r.opts.OnMap)
+				}
 				// 普通关必须 3 星才算达标（3 星才解锁突袭/代理指挥，且结算页判星在这里最准）：
 				// 1★/2★ 记进台账（记最高星），但像失败一样换下一份作业重打；突袭只认「通关」。
 				if mode == "normal" && stars < 3 {
