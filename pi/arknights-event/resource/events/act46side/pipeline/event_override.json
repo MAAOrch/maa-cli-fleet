@@ -5,7 +5,12 @@
             "type": "TemplateMatch",
             "param": {
                 "template": "EventNav/terminal_event_card.png",
-                "roi": [0, 320, 400, 200],
+                "roi": [
+                    0,
+                    320,
+                    400,
+                    200
+                ],
                 "threshold": 0.85
             }
         },
@@ -24,7 +29,12 @@
             "type": "TemplateMatch",
             "param": {
                 "template": "EventNav/terminal_event_card.png",
-                "roi": [0, 320, 400, 200],
+                "roi": [
+                    0,
+                    320,
+                    400,
+                    200
+                ],
                 "threshold": 0.85
             }
         },
@@ -43,7 +53,12 @@
             "type": "TemplateMatch",
             "param": {
                 "template": "EventNav/terminal_event_card.png",
-                "roi": [0, 320, 400, 200],
+                "roi": [
+                    0,
+                    320,
+                    400,
+                    200
+                ],
                 "threshold": 0.85
             }
         },
@@ -62,14 +77,24 @@
             "type": "TemplateMatch",
             "param": {
                 "template": "EventNav/hub_ex.png",
-                "roi": [950, 430, 330, 180],
+                "roi": [
+                    950,
+                    430,
+                    330,
+                    180
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [1065, 465, 1, 1]
+                "target": [
+                    1065,
+                    465,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 3500,
@@ -83,14 +108,24 @@
             "type": "TemplateMatch",
             "param": {
                 "template": "EventNav/hub_s.png",
-                "roi": [1070, 430, 210, 180],
+                "roi": [
+                    1070,
+                    430,
+                    210,
+                    180
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [1180, 465, 1, 1]
+                "target": [
+                    1180,
+                    465,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 3500,
@@ -104,14 +139,24 @@
             "type": "TemplateMatch",
             "param": {
                 "template": "EventNav/hub_main.png",
-                "roi": [830, 430, 240, 180],
+                "roi": [
+                    830,
+                    430,
+                    240,
+                    180
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [950, 465, 1, 1]
+                "target": [
+                    920,
+                    525,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 3500,
@@ -125,7 +170,12 @@
             "type": "TemplateMatch",
             "param": {
                 "template": "EventNav/tab_ex.png",
-                "roi": [980, 595, 190, 125],
+                "roi": [
+                    980,
+                    595,
+                    190,
+                    125
+                ],
                 "threshold": 0.85
             }
         },
@@ -144,7 +194,12 @@
             "type": "TemplateMatch",
             "param": {
                 "template": "EventNav/tab_s.png",
-                "roi": [1110, 595, 170, 125],
+                "roi": [
+                    1110,
+                    595,
+                    170,
+                    125
+                ],
                 "threshold": 0.85
             }
         },
@@ -163,7 +218,12 @@
             "type": "TemplateMatch",
             "param": {
                 "template": "EventNav/tab_main.png",
-                "roi": [870, 595, 180, 125],
+                "roi": [
+                    870,
+                    595,
+                    180,
+                    125
+                ],
                 "threshold": 0.85
             }
         },
@@ -184,7 +244,12 @@
                 "expected": [
                     "OS-EX-1"
                 ],
-                "roi": [60, 90, 1200, 520],
+                "roi": [
+                    60,
+                    90,
+                    1200,
+                    520
+                ],
                 "threshold": 0.3
             }
         },
@@ -204,7 +269,12 @@
                 "expected": [
                     "OS-EX-5"
                 ],
-                "roi": [60, 90, 1200, 520],
+                "roi": [
+                    60,
+                    90,
+                    1200,
+                    520
+                ],
                 "threshold": 0.3
             }
         },
@@ -221,7 +291,12 @@
                 "template": [
                     "EventNav/s_map_art.png"
                 ],
-                "roi": [400, 40, 500, 260],
+                "roi": [
+                    400,
+                    40,
+                    500,
+                    260
+                ],
                 "threshold": 0.85
             }
         },
@@ -238,7 +313,12 @@
                 "expected": [
                     "OS-1"
                 ],
-                "roi": [60, 90, 1200, 520],
+                "roi": [
+                    60,
+                    90,
+                    1200,
+                    520
+                ],
                 "threshold": 0.3
             }
         },
@@ -256,9 +336,18 @@
             "type": "OCR",
             "param": {
                 "expected": [
-                    "OS-3"
+                    "OS-3",
+                    "OS-2",
+                    "OS-ST-1",
+                    "OS-TR-1",
+                    "OS-1"
                 ],
-                "roi": [60, 90, 1200, 520],
+                "roi": [
+                    60,
+                    90,
+                    1200,
+                    520
+                ],
                 "threshold": 0.3
             }
         },
@@ -302,14 +391,24 @@
                     "OS-ST-4",
                     "OS-TR-1"
                 ],
-                "roi": [60, 90, 1200, 520],
+                "roi": [
+                    60,
+                    90,
+                    1200,
+                    520
+                ],
                 "threshold": 0.3
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [45, 42, 1, 1]
+                "target": [
+                    45,
+                    42,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 2000,
@@ -352,7 +451,12 @@
                     "OS-ST-4",
                     "OS-TR-1"
                 ],
-                "roi": [60, 90, 1200, 520],
+                "roi": [
+                    60,
+                    90,
+                    1200,
+                    520
+                ],
                 "threshold": 0.3
             }
         },
@@ -369,7 +473,12 @@
                 "expected": [
                     "OS-S-1"
                 ],
-                "roi": [60, 90, 1200, 500],
+                "roi": [
+                    60,
+                    90,
+                    1200,
+                    500
+                ],
                 "threshold": 0.3
             }
         },
@@ -390,7 +499,12 @@
                 "expected": [
                     "OS-S-2"
                 ],
-                "roi": [60, 90, 1200, 500],
+                "roi": [
+                    60,
+                    90,
+                    1200,
+                    500
+                ],
                 "threshold": 0.3
             }
         },
@@ -411,7 +525,12 @@
                 "expected": [
                     "OS-S-3"
                 ],
-                "roi": [60, 90, 1200, 500],
+                "roi": [
+                    60,
+                    90,
+                    1200,
+                    500
+                ],
                 "threshold": 0.3
             }
         },
@@ -432,7 +551,12 @@
                 "expected": [
                     "OS-S-4"
                 ],
-                "roi": [60, 90, 1200, 500],
+                "roi": [
+                    60,
+                    90,
+                    1200,
+                    500
+                ],
                 "threshold": 0.3
             }
         },
@@ -453,7 +577,12 @@
                 "expected": [
                     "OS-S-5"
                 ],
-                "roi": [60, 90, 1200, 500],
+                "roi": [
+                    60,
+                    90,
+                    1200,
+                    500
+                ],
                 "threshold": 0.3
             }
         },
@@ -594,7 +723,12 @@
                 "expected": [
                     "OS-S-1"
                 ],
-                "roi": [840, 65, 440, 85],
+                "roi": [
+                    840,
+                    65,
+                    440,
+                    85
+                ],
                 "threshold": 0.3
             }
         },
@@ -611,7 +745,12 @@
                 "expected": [
                     "OS-S-2"
                 ],
-                "roi": [840, 65, 440, 85],
+                "roi": [
+                    840,
+                    65,
+                    440,
+                    85
+                ],
                 "threshold": 0.3
             }
         },
@@ -628,7 +767,12 @@
                 "expected": [
                     "OS-S-3"
                 ],
-                "roi": [840, 65, 440, 85],
+                "roi": [
+                    840,
+                    65,
+                    440,
+                    85
+                ],
                 "threshold": 0.3
             }
         },
@@ -645,7 +789,12 @@
                 "expected": [
                     "OS-S-4"
                 ],
-                "roi": [840, 65, 440, 85],
+                "roi": [
+                    840,
+                    65,
+                    440,
+                    85
+                ],
                 "threshold": 0.3
             }
         },
@@ -662,7 +811,12 @@
                 "expected": [
                     "OS-S-5"
                 ],
-                "roi": [840, 65, 440, 85],
+                "roi": [
+                    840,
+                    65,
+                    440,
+                    85
+                ],
                 "threshold": 0.3
             }
         },
@@ -706,7 +860,12 @@
                     "OS-ST-4",
                     "OS-TR-1"
                 ],
-                "roi": [60, 90, 1200, 520],
+                "roi": [
+                    60,
+                    90,
+                    1200,
+                    520
+                ],
                 "threshold": 0.3
             }
         },
@@ -753,7 +912,12 @@
                     "OS-ST-4",
                     "OS-TR-1"
                 ],
-                "roi": [60, 90, 1200, 520],
+                "roi": [
+                    60,
+                    90,
+                    1200,
+                    520
+                ],
                 "threshold": 0.3
             }
         },
@@ -800,7 +964,12 @@
                     "OS-ST-4",
                     "OS-TR-1"
                 ],
-                "roi": [60, 90, 1200, 520],
+                "roi": [
+                    60,
+                    90,
+                    1200,
+                    520
+                ],
                 "threshold": 0.3
             }
         },
@@ -847,7 +1016,12 @@
                     "OS-ST-4",
                     "OS-TR-1"
                 ],
-                "roi": [60, 90, 1200, 520],
+                "roi": [
+                    60,
+                    90,
+                    1200,
+                    520
+                ],
                 "threshold": 0.3
             }
         },
@@ -894,7 +1068,12 @@
                     "OS-ST-4",
                     "OS-TR-1"
                 ],
-                "roi": [60, 90, 1200, 520],
+                "roi": [
+                    60,
+                    90,
+                    1200,
+                    520
+                ],
                 "threshold": 0.3
             }
         },
@@ -915,14 +1094,24 @@
                     "EventNav/detail_startbtn.png",
                     "EventNav/detail_startbtn_raid.png"
                 ],
-                "roi": [1035, 600, 245, 115],
+                "roi": [
+                    1035,
+                    600,
+                    245,
+                    115
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [45, 42, 1, 1]
+                "target": [
+                    45,
+                    42,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 1800,
@@ -939,14 +1128,24 @@
                     "EventNav/detail_startbtn.png",
                     "EventNav/detail_startbtn_raid.png"
                 ],
-                "roi": [1035, 600, 245, 115],
+                "roi": [
+                    1035,
+                    600,
+                    245,
+                    115
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [45, 42, 1, 1]
+                "target": [
+                    45,
+                    42,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 1800,
@@ -963,14 +1162,24 @@
                     "EventNav/detail_startbtn.png",
                     "EventNav/detail_startbtn_raid.png"
                 ],
-                "roi": [1035, 600, 245, 115],
+                "roi": [
+                    1035,
+                    600,
+                    245,
+                    115
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [45, 42, 1, 1]
+                "target": [
+                    45,
+                    42,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 1800,
@@ -987,14 +1196,24 @@
                     "EventNav/detail_startbtn.png",
                     "EventNav/detail_startbtn_raid.png"
                 ],
-                "roi": [1035, 600, 245, 115],
+                "roi": [
+                    1035,
+                    600,
+                    245,
+                    115
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [45, 42, 1, 1]
+                "target": [
+                    45,
+                    42,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 1800,
@@ -1011,14 +1230,24 @@
                     "EventNav/detail_startbtn.png",
                     "EventNav/detail_startbtn_raid.png"
                 ],
-                "roi": [1035, 600, 245, 115],
+                "roi": [
+                    1035,
+                    600,
+                    245,
+                    115
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [45, 42, 1, 1]
+                "target": [
+                    45,
+                    42,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 1800,

@@ -92,6 +92,8 @@
             "NavSaveDialog",
             "NavResultEnd",
             "NavResultFail",
+            "NavOperSelectBack",
+            "NavSquadBack",
             "NavDetailAny",
             "NavMapAnyBack",
             "NavHubAnyBack",
@@ -129,7 +131,12 @@
             "type": "TemplateMatch",
             "param": {
                 "template": "EventNav/home_terminal.png",
-                "roi": [860, 100, 300, 150],
+                "roi": [
+                    860,
+                    100,
+                    300,
+                    150
+                ],
                 "threshold": 0.85
             }
         },
@@ -144,14 +151,24 @@
             "type": "TemplateMatch",
             "param": {
                 "template": "EventNav/home_terminal.png",
-                "roi": [860, 100, 300, 150],
+                "roi": [
+                    860,
+                    100,
+                    300,
+                    150
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [960, 160, 1, 1]
+                "target": [
+                    960,
+                    160,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 2500,
@@ -165,14 +182,24 @@
             "type": "TemplateMatch",
             "param": {
                 "template": "EventNav/home_terminal.png",
-                "roi": [860, 100, 300, 150],
+                "roi": [
+                    860,
+                    100,
+                    300,
+                    150
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [960, 160, 1, 1]
+                "target": [
+                    960,
+                    160,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 2500,
@@ -186,14 +213,24 @@
             "type": "TemplateMatch",
             "param": {
                 "template": "EventNav/home_terminal.png",
-                "roi": [860, 100, 300, 150],
+                "roi": [
+                    860,
+                    100,
+                    300,
+                    150
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [960, 160, 1, 1]
+                "target": [
+                    960,
+                    160,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 2500,
@@ -207,14 +244,24 @@
             "type": "TemplateMatch",
             "param": {
                 "template": "EventNav/terminal_event_card.png",
-                "roi": [0, 320, 400, 200],
+                "roi": [
+                    0,
+                    320,
+                    400,
+                    200
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [45, 42, 1, 1]
+                "target": [
+                    45,
+                    42,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 1800,
@@ -232,14 +279,24 @@
                     "EventNav/hub_ex.png",
                     "EventNav/hub_s.png"
                 ],
-                "roi": [820, 420, 460, 200],
+                "roi": [
+                    820,
+                    420,
+                    460,
+                    200
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [45, 42, 1, 1]
+                "target": [
+                    45,
+                    42,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 2000,
@@ -256,14 +313,24 @@
                     "EventNav/detail_startbtn.png",
                     "EventNav/detail_startbtn_raid.png"
                 ],
-                "roi": [1040, 600, 240, 120],
+                "roi": [
+                    1040,
+                    600,
+                    240,
+                    120
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [45, 42, 1, 1]
+                "target": [
+                    45,
+                    42,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 1800,
@@ -282,14 +349,24 @@
                     "EventNav/detail_startbtn.png",
                     "EventNav/detail_startbtn_raid.png"
                 ],
-                "roi": [1040, 600, 240, 120],
+                "roi": [
+                    1040,
+                    600,
+                    240,
+                    120
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [45, 42, 1, 1]
+                "target": [
+                    45,
+                    42,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 1800,
@@ -308,14 +385,24 @@
                     "EventNav/detail_startbtn.png",
                     "EventNav/detail_startbtn_raid.png"
                 ],
-                "roi": [1040, 600, 240, 120],
+                "roi": [
+                    1040,
+                    600,
+                    240,
+                    120
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [45, 42, 1, 1]
+                "target": [
+                    45,
+                    42,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 1800,
@@ -334,14 +421,24 @@
                     "EventNav/detail_startbtn.png",
                     "EventNav/detail_startbtn_raid.png"
                 ],
-                "roi": [1040, 600, 240, 120],
+                "roi": [
+                    1040,
+                    600,
+                    240,
+                    120
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [45, 42, 1, 1]
+                "target": [
+                    45,
+                    42,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 1800,
@@ -359,14 +456,24 @@
                     "EventNav/detail_startbtn.png",
                     "EventNav/detail_startbtn_raid.png"
                 ],
-                "roi": [1040, 600, 240, 120],
+                "roi": [
+                    1040,
+                    600,
+                    240,
+                    120
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [45, 42, 1, 1]
+                "target": [
+                    45,
+                    42,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 1800,
@@ -380,14 +487,24 @@
             "type": "TemplateMatch",
             "param": {
                 "template": "EventNav/save_dialog.png",
-                "roi": [820, 160, 460, 160],
+                "roi": [
+                    820,
+                    160,
+                    460,
+                    160
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [1170, 262, 1, 1]
+                "target": [
+                    1170,
+                    262,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 1500,
@@ -401,14 +518,24 @@
             "type": "TemplateMatch",
             "param": {
                 "template": "EventNav/result_end.png",
-                "roi": [20, 110, 460, 240],
+                "roi": [
+                    20,
+                    110,
+                    460,
+                    240
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [640, 660, 1, 1]
+                "target": [
+                    640,
+                    660,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 2500,
@@ -438,14 +565,24 @@
             "type": "TemplateMatch",
             "param": {
                 "template": "EventNav/result_fail.png",
-                "roi": [40, 200, 500, 320],
+                "roi": [
+                    40,
+                    200,
+                    500,
+                    320
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [640, 360, 1, 1]
+                "target": [
+                    640,
+                    360,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 2800,
@@ -459,14 +596,24 @@
             "type": "TemplateMatch",
             "param": {
                 "template": "EventNav/save_dialog.png",
-                "roi": [820, 160, 460, 160],
+                "roi": [
+                    820,
+                    160,
+                    460,
+                    160
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [1170, 262, 1, 1]
+                "target": [
+                    1170,
+                    262,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 1500,
@@ -480,14 +627,24 @@
             "type": "TemplateMatch",
             "param": {
                 "template": "EventNav/result_end.png",
-                "roi": [20, 110, 460, 240],
+                "roi": [
+                    20,
+                    110,
+                    460,
+                    240
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [640, 660, 1, 1]
+                "target": [
+                    640,
+                    660,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 2500,
@@ -502,14 +659,24 @@
             "type": "TemplateMatch",
             "param": {
                 "template": "EventNav/result_fail.png",
-                "roi": [40, 200, 500, 320],
+                "roi": [
+                    40,
+                    200,
+                    500,
+                    320
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [640, 360, 1, 1]
+                "target": [
+                    640,
+                    360,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 2800,
@@ -525,7 +692,12 @@
                 "expected": [
                     "突袭模式"
                 ],
-                "roi": [580, 595, 260, 120],
+                "roi": [
+                    580,
+                    595,
+                    260,
+                    120
+                ],
                 "threshold": 0.3
             }
         },
@@ -546,7 +718,12 @@
                 "expected": [
                     "开始突袭"
                 ],
-                "roi": [1040, 600, 240, 120],
+                "roi": [
+                    1040,
+                    600,
+                    240,
+                    120
+                ],
                 "threshold": 0.3
             }
         },
@@ -581,14 +758,24 @@
                     "使用药剂恢复",
                     "清空选择"
                 ],
-                "roi": [650, 280, 620, 430],
+                "roi": [
+                    650,
+                    280,
+                    620,
+                    430
+                ],
                 "threshold": 0.3
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [833, 668, 1, 1]
+                "target": [
+                    833,
+                    668,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 1500,
@@ -602,7 +789,12 @@
                 "expected": [
                     "使用药剂恢复"
                 ],
-                "roi": [640, 280, 260, 70],
+                "roi": [
+                    640,
+                    280,
+                    260,
+                    70
+                ],
                 "threshold": 0.3
             }
         },
@@ -627,14 +819,24 @@
                     "理智小样",
                     "理智药剂"
                 ],
-                "roi": [720, 575, 560, 95],
+                "roi": [
+                    720,
+                    575,
+                    560,
+                    95
+                ],
                 "threshold": 0.3
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [1069, 668, 1, 1]
+                "target": [
+                    1069,
+                    668,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 3000,
@@ -665,14 +867,24 @@
                 "template": [
                     "EventNav/home_terminal.png"
                 ],
-                "roi": [860, 100, 300, 150],
+                "roi": [
+                    860,
+                    100,
+                    300,
+                    150
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [752, 183, 1, 1]
+                "target": [
+                    752,
+                    183,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 1800,
@@ -689,7 +901,12 @@
                     "重新连接",
                     "重试"
                 ],
-                "roi": [380, 230, 520, 260],
+                "roi": [
+                    380,
+                    230,
+                    520,
+                    260
+                ],
                 "threshold": 0.3
             }
         },
@@ -710,7 +927,12 @@
                     "取消",
                     "知道了"
                 ],
-                "roi": [200, 260, 880, 300],
+                "roi": [
+                    200,
+                    260,
+                    880,
+                    300
+                ],
                 "threshold": 0.3
             }
         },
@@ -730,14 +952,24 @@
                     "EventNav/detail_startbtn.png",
                     "EventNav/detail_startbtn_raid.png"
                 ],
-                "roi": [1035, 600, 245, 115],
+                "roi": [
+                    1035,
+                    600,
+                    245,
+                    115
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [900, 665, 1, 1]
+                "target": [
+                    900,
+                    665,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 2500,
@@ -753,7 +985,12 @@
                 "template": [
                     "EventNav/drill_squad.png"
                 ],
-                "roi": [820, 0, 320, 100],
+                "roi": [
+                    820,
+                    0,
+                    320,
+                    100
+                ],
                 "threshold": 0.85
             }
         },
@@ -770,14 +1007,24 @@
                 "template": [
                     "EventNav/drill_squad.png"
                 ],
-                "roi": [820, 0, 320, 100],
+                "roi": [
+                    820,
+                    0,
+                    320,
+                    100
+                ],
                 "threshold": 0.85
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [45, 42, 1, 1]
+                "target": [
+                    45,
+                    42,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 1500
@@ -790,7 +1037,12 @@
                 "expected": [
                     "(?i)skip"
                 ],
-                "roi": [1080, 0, 200, 95],
+                "roi": [
+                    1080,
+                    0,
+                    200,
+                    95
+                ],
                 "threshold": 0.3
             }
         },
@@ -812,19 +1064,101 @@
                     "跳过",
                     "剧情"
                 ],
-                "roi": [400, 250, 480, 260],
+                "roi": [
+                    400,
+                    250,
+                    480,
+                    260
+                ],
                 "threshold": 0.3
             }
         },
         "action": {
             "type": "Click",
             "param": {
-                "target": [750, 500, 1, 1]
+                "target": [
+                    750,
+                    500,
+                    1,
+                    1
+                ]
             }
         },
         "post_delay": 2500,
         "next": [
             "NavCollectMapStart"
+        ]
+    },
+    "NavOperSelectBack": {
+        "doc": "干员选择/快捷编队选人页（编队期熔断后常停于此）→ 点左上返回退回编队页",
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "收起>",
+                    "收起"
+                ],
+                "roi": [
+                    60,
+                    0,
+                    1200,
+                    620
+                ],
+                "threshold": 0.3
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [
+                    45,
+                    42,
+                    1,
+                    1
+                ]
+            }
+        },
+        "post_delay": 1800,
+        "next": [
+            "NavSquadBack",
+            "NavDetailAny",
+            "NavMapAnyBack",
+            "NavHome"
+        ]
+    },
+    "NavSquadBack": {
+        "doc": "编队页（快捷编队按钮）→ 点左上返回退回关卡详情页",
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "EventNav/drill_squad.png"
+                ],
+                "roi": [
+                    820,
+                    0,
+                    320,
+                    100
+                ],
+                "threshold": 0.85
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [
+                    45,
+                    42,
+                    1,
+                    1
+                ]
+            }
+        },
+        "post_delay": 1800,
+        "next": [
+            "NavDetailAny",
+            "NavMapAnyBack",
+            "NavHome"
         ]
     }
 }
