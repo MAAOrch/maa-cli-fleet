@@ -32,6 +32,7 @@ func NewHandler(m *Manager) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", h.health)
 	mux.HandleFunc("GET /api/pi/projects", h.piProjects)
+	mux.HandleFunc("POST /api/pi/enqueue", h.piEnqueue)
 	mux.HandleFunc("GET /api/accounts", h.accounts)
 	mux.HandleFunc("POST /api/box", h.box)
 	mux.HandleFunc("POST /api/box/maa", h.boxFromMaa)
@@ -593,7 +594,7 @@ func (h *handler) navRestart(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "detail": msg})
 }
 
-func (h *Handler) piProjects(w http.ResponseWriter, r *http.Request) {
+func (h *handler) piProjects(w http.ResponseWriter, r *http.Request) {
 	// 简单返回可用 PI 项目（读工作区 pi/ 目录）
 	type proj struct {
 		Name    string   `json:"name"`
@@ -602,7 +603,7 @@ func (h *Handler) piProjects(w http.ResponseWriter, r *http.Request) {
 	var out []proj
 	entries, err := os.ReadDir("pi")
 	if err != nil {
-		h.writeJSON(w, []proj{})
+		writeJSON(w, http.StatusOK, []proj{})
 		return
 	}
 	for _, e := range entries {
@@ -629,5 +630,33 @@ func (h *Handler) piProjects(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, proj{Name: e.Name(), Entries: tasks})
 	}
-	h.writeJSON(w, out)
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (h *handler) piEnqueue(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Project string `json:"project"`
+		Entry   string `json:"entry"`
+		Account string `json:"account"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Project == "" || req.Entry == "" || req.Account == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "missing project/entry/account"})
+		return
+	}
+	// 写到工作区根的 queue.in（调用方可按需改为可配置路径）
+	q := "queue.in"
+	f, err := os.OpenFile(q, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	defer f.Close()
+	kind := "pi." + req.Project + "." + req.Entry
+	line := fmt.Sprintf(`{"op":"enqueue","kind":%q,"account":%q}
+`, kind, req.Account)
+	if _, err := f.WriteString(line); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "kind": kind, "account": req.Account})
 }
