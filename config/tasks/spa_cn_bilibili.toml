@@ -1,0 +1,12 @@
+# spa_cn_bilibili.toml — 国服 B 服卫戍协议（StartUp + 进场导航 + MiniGame@SPA 循环）
+# 依赖 config/maa/MAAOrch/spa_cn.json 部署到 MAA resource/tasks/MAAOrch/。
+
+[[tasks]]
+name = "开始唤醒"
+type = "StartUp"
+params = { client_type = "Bilibili", start_game_enabled = true }
+
+[[tasks]]
+name = "卫戍协议"
+type = "Custom"
+params = { task_names = ["MAAOrch@SPA@EnterCN"] }

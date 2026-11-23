@@ -1,0 +1,18 @@
+{
+  "description": "国服卫戍协议（MiniGame@SPA）11 账号分批名单（以 MAS 实时 emu 为准）",
+  "host": "MRFZ-0000",
+  "masUrl": "http://100.79.173.69:36163",
+  "accounts": [
+    { "id": "spa_03", "name": "小熊附体", "client": "Bilibili", "emu": "3", "task": "spa_cn_bilibili" },
+    { "id": "spa_04", "name": "皮埃尔商店", "client": "Official", "emu": "4", "task": "spa_cn_official" },
+    { "id": "spa_08", "name": "摸摸摸摸鱼", "client": "Bilibili", "emu": "8", "task": "spa_cn_bilibili" },
+    { "id": "spa_22", "name": "阿仄仄仄", "client": "Bilibili", "emu": "22", "task": "spa_cn_bilibili" },
+    { "id": "spa_30", "name": "笙笙wzh", "client": "Official", "emu": "30", "task": "spa_cn_official" },
+    { "id": "spa_31", "name": "骰子", "client": "Official", "emu": "31", "task": "spa_cn_official" },
+    { "id": "spa_36", "name": "y9Flipped", "client": "Official", "emu": "36", "task": "spa_cn_official" },
+    { "id": "spa_40", "name": "祝你祝我天天开心", "client": "Official", "emu": "40", "task": "spa_cn_official" },
+    { "id": "spa_42", "name": "寻找勇者的大魔王", "client": "Official", "emu": "42", "task": "spa_cn_official" },
+    { "id": "spa_44", "name": "烤箱", "client": "Official", "emu": "44", "task": "spa_cn_official" },
+    { "id": "spa_50", "name": "白桑_", "client": "Official", "emu": "50", "task": "spa_cn_official" }
+  ]
+}

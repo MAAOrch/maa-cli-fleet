@@ -1,0 +1,113 @@
+{
+  "MAAOrch@SPA@EnterCN": {
+    "doc": "国服卫戍协议进场导航（纯 OCR + 复用 MAA 内置 MiniGame@SPA）：大厅活动横幅 -> 放弃旧存档/进入独立模拟 -> 衔接 MiniGame@SPA 循环",
+    "algorithm": "JustReturn",
+    "retry_times": 120,
+    "next": [
+      "MiniGame@SPA@EnterIndependent",
+      "MiniGame@SPA@EnterDanger",
+      "MiniGame@SPA@EnterStandard",
+      "MiniGame@SPA@StartSimulation",
+      "MiniGame@SPA@GiveUp",
+      "MAAOrch@SPA@CN@ConfirmGiveUp",
+      "MAAOrch@SPA@CN@ReturnHome",
+      "MAAOrch@SPA@CN@EnterIndependentOcr",
+      "MAAOrch@SPA@CN@ClickBannerOcr",
+      "MAAOrch@SPA@CN@ClickTerminalOcr",
+      "MAAOrch@SPA@CN@ClosePopup"
+    ]
+  },
+  "MAAOrch@SPA@CN@ClickBannerOcr": {
+    "doc": "大厅右侧活动横幅 OCR 识别「卫戍协议 / 盟约」",
+    "algorithm": "OcrDetect",
+    "action": "ClickSelf",
+    "text": ["卫戍协议", "盟约", "卫戍"],
+    "roi": [880, 70, 400, 260],
+    "postDelay": 2500,
+    "next": [
+      "MiniGame@SPA@EnterIndependent",
+      "MiniGame@SPA@GiveUp",
+      "MAAOrch@SPA@CN@EnterIndependentOcr",
+      "MAAOrch@SPA@CN@ClosePopup",
+      "MAAOrch@SPA@CN@ClickBannerOcr"
+    ]
+  },
+  "MAAOrch@SPA@CN@ClickTerminalOcr": {
+    "doc": "若大厅横幅被遮挡或切页，尝试点「终端」进入后找卫戍入口",
+    "algorithm": "OcrDetect",
+    "action": "ClickSelf",
+    "text": ["终端"],
+    "roi": [860, 120, 320, 220],
+    "postDelay": 2000,
+    "next": [
+      "MAAOrch@SPA@CN@ClickTerminalBannerOcr",
+      "MiniGame@SPA@EnterIndependent",
+      "MAAOrch@SPA@CN@EnterIndependentOcr",
+      "MAAOrch@SPA@EnterCN"
+    ]
+  },
+  "MAAOrch@SPA@CN@ClickTerminalBannerOcr": {
+    "doc": "终端页 OCR 找「卫戍协议」入口",
+    "algorithm": "OcrDetect",
+    "action": "ClickSelf",
+    "text": ["卫戍协议", "盟约", "卫戍"],
+    "roi": [0, 80, 1280, 600],
+    "postDelay": 2500,
+    "next": [
+      "MiniGame@SPA@EnterIndependent",
+      "MiniGame@SPA@GiveUp",
+      "MAAOrch@SPA@CN@EnterIndependentOcr",
+      "MAAOrch@SPA@CN@ClosePopup",
+      "MAAOrch@SPA@CN@ClickTerminalBannerOcr"
+    ]
+  },
+  "MAAOrch@SPA@CN@EnterIndependentOcr": {
+    "doc": "OCR 兜底点击「独立模拟」或「继续/开始模拟」",
+    "algorithm": "OcrDetect",
+    "action": "ClickSelf",
+    "text": ["独立模拟", "单人模拟"],
+    "roi": [420, 500, 480, 220],
+    "postDelay": 1500,
+    "next": [
+      "MiniGame@SPA@EnterDanger",
+      "MiniGame@SPA@EnterStandard",
+      "MiniGame@SPA@StartSimulation",
+      "MiniGame@SPA@GiveUp",
+      "#self"
+    ]
+  },
+  "MAAOrch@SPA@CN@ConfirmGiveUp": {
+    "doc": "放弃旧存档弹窗确认",
+    "algorithm": "OcrDetect",
+    "action": "ClickSelf",
+    "text": ["确定", "确认"],
+    "roi": [680, 380, 500, 220],
+    "postDelay": 3000,
+    "next": [
+      "MiniGame@SPA@ReturnHome",
+      "MAAOrch@SPA@CN@ReturnHome",
+      "MiniGame@SPA@EnterIndependent"
+    ]
+  },
+  "MAAOrch@SPA@CN@ReturnHome": {
+    "doc": "结算后返回卫戍主页",
+    "algorithm": "OcrDetect",
+    "action": "ClickSelf",
+    "text": ["返回主页", "返回"],
+    "roi": [860, 560, 400, 160],
+    "postDelay": 2500,
+    "next": [
+      "MiniGame@SPA@EnterIndependent",
+      "MAAOrch@SPA@CN@EnterIndependentOcr"
+    ]
+  },
+  "MAAOrch@SPA@CN@ClosePopup": {
+    "doc": "关掉首次进入介绍/提示弹窗",
+    "algorithm": "OcrDetect",
+    "action": "ClickSelf",
+    "text": ["关闭", "知道了", "跳过"],
+    "roi": [0, 0, 1280, 720],
+    "postDelay": 1500,
+    "next": ["MAAOrch@SPA@EnterCN"]
+  }
+}
