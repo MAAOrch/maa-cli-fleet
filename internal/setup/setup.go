@@ -108,6 +108,9 @@ func latestMaaCliZip() (url, tag string, err error) {
 		return "", "", err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("GitHub API 返回 HTTP %d", resp.StatusCode)
+	}
 	var rel struct {
 		TagName string `json:"tag_name"`
 		Assets  []struct {
@@ -131,21 +134,10 @@ func downloadAndUnzipMaaCli(url, binDir string) error {
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		return err
 	}
-	zipPath := filepath.Join(os.TempDir(), fmt.Sprintf("maa_cli_%d.zip", time.Now().Unix()))
-	resp, err := netproxy.NewClient().Get(url)
-	if err != nil {
+	zipPath := filepath.Join(os.TempDir(), fmt.Sprintf("maa_cli_%d.zip", time.Now().UnixNano()))
+	if err := downloadTo(url, zipPath); err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-	f, err := os.Create(zipPath)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(f, resp.Body); err != nil {
-		f.Close()
-		return err
-	}
-	f.Close()
 	defer os.Remove(zipPath)
 
 	zr, err := zip.OpenReader(zipPath)
@@ -209,7 +201,9 @@ func Direct(root, dataDir string) error {
 
 	libDir := filepath.Join(dataDir, "lib")
 	resDir := filepath.Join(dataDir, "resource")
-	_ = os.MkdirAll(libDir, 0o755)
+	if err := os.MkdirAll(libDir, 0o755); err != nil {
+		return err
+	}
 	if err := unzipAll(zipPath, libDir); err != nil {
 		return err
 	}
@@ -239,6 +233,9 @@ func latestCoreZip() (url, tag string, size int64, err error) {
 		return "", "", 0, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", "", 0, fmt.Errorf("GitHub API 返回 HTTP %d", resp.StatusCode)
+	}
 	var rel struct {
 		TagName string `json:"tag_name"`
 		Assets  []struct {
@@ -259,25 +256,39 @@ func latestCoreZip() (url, tag string, size int64, err error) {
 }
 
 func downloadTo(url, dst string) error {
-	resp, err := netproxy.NewClient().Get(url)
+	c := netproxy.NewClient()
+	c.Timeout = 10 * time.Minute
+	resp, err := c.Get(url)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("下载失败（HTTP %d）：%s", resp.StatusCode, url)
+	}
 	f, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 	n, err := io.Copy(f, resp.Body)
+	closeErr := f.Close()
 	if err != nil {
+		_ = os.Remove(dst)
 		return err
+	}
+	if closeErr != nil {
+		_ = os.Remove(dst)
+		return closeErr
 	}
 	log.Printf("[setup] 已下载 %.1fMB", float64(n)/1024/1024)
 	return nil
 }
 
 func unzipAll(zipPath, dstDir string) error {
+	absDst, err := filepath.Abs(dstDir)
+	if err != nil {
+		return err
+	}
 	zr, err := zip.OpenReader(zipPath)
 	if err != nil {
 		return err
@@ -285,9 +296,15 @@ func unzipAll(zipPath, dstDir string) error {
 	defer zr.Close()
 	n := 0
 	for _, zf := range zr.File {
-		target := filepath.Join(dstDir, filepath.FromSlash(zf.Name))
+		target := filepath.Join(absDst, filepath.FromSlash(zf.Name))
+		rel, err := filepath.Rel(absDst, target)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("zip 包含非法路径穿越条目：%q", zf.Name)
+		}
 		if zf.FileInfo().IsDir() {
-			_ = os.MkdirAll(target, 0o755)
+			if err := os.MkdirAll(target, 0o755); err != nil {
+				return err
+			}
 			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
@@ -303,10 +320,13 @@ func unzipAll(zipPath, dstDir string) error {
 			return err
 		}
 		_, err = io.Copy(out, rc)
-		out.Close()
+		closeErr := out.Close()
 		rc.Close()
 		if err != nil {
 			return err
+		}
+		if closeErr != nil {
+			return closeErr
 		}
 		n++
 	}
