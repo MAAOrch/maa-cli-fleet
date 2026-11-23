@@ -133,6 +133,49 @@ func (h *handler) navPackDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": id})
 }
 
+func (h *handler) navPackRun(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		AccountID string `json:"accountId"`
+		TaskName  string `json:"taskName"`
+		Project   string `json:"project,omitempty"`
+	}
+	if err := decodeBody(w, r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	req.AccountID = strings.TrimSpace(req.AccountID)
+	req.TaskName = strings.TrimSpace(req.TaskName)
+	if req.AccountID == "" || req.TaskName == "" {
+		writeErr(w, http.StatusBadRequest, "缺少 accountId 或 taskName")
+		return
+	}
+	accounts, err := h.m.Accounts(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	acc, ok := findAccount(accounts, req.AccountID)
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "账号不存在："+req.AccountID)
+		return
+	}
+	if acc.Adb == "" {
+		writeErr(w, http.StatusBadRequest, "账号解析不出 adb 地址："+req.AccountID)
+		return
+	}
+	tail, err := h.m.RunPiNavTask(r.Context(), acc.Adb, req.Project, req.TaskName)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":        true,
+		"accountId": req.AccountID,
+		"taskName":  req.TaskName,
+		"output":    tail,
+	})
+}
+
 // ImportNavPack 解析 .json 或 .zip 导航文件，落盘并同步到 PI 项目 overlay。
 func (m *Manager) ImportNavPack(filename string, data []byte, name, phase, wantEntry, piProject string) (NavPack, error) {
 	extName := strings.ToLower(filepath.Ext(filename))

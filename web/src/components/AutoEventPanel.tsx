@@ -132,6 +132,25 @@ export function AutoEventPanel({ accounts, activeRunId, onSelectRun }: AutoEvent
     }
   }
 
+  async function handleTestNav(phaseId: string, defaultTask: string) {
+    const accId = selectedAccounts[0]
+    if (!accId) {
+      setNotice('请先勾选至少一个模拟器/账号，再测试执行导航')
+      return
+    }
+    const taskName = phaseNavTasks[phaseId] || defaultTask
+    setBusy(true)
+    setNotice(`正在调用 MaaFramework 在 ${accId} 上执行导航「${taskName}」…`)
+    try {
+      await api.runNavTask(accId, taskName)
+      setNotice(`导航「${taskName}」执行成功（${accId} 已到位）`)
+    } catch (err) {
+      setNotice(`导航「${taskName}」失败：${describeError(err)}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function handleStartAll() {
     const codes = stagesText
       .split(/[\s,，;；]+/)
@@ -290,6 +309,14 @@ export function AutoEventPanel({ accounts, activeRunId, onSelectRun }: AutoEvent
                       </option>
                     ))}
                   </select>
+                  <button
+                    type="button"
+                    className="border rounded px-1.5 py-0.5 bg-white hover:bg-blue-50 disabled:opacity-50"
+                    disabled={busy}
+                    onClick={() => void handleTestNav(p.id, p.defaultTask)}
+                  >
+                    测试导航
+                  </button>
                 </div>
               ))}
             </div>

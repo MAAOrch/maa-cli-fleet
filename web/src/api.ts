@@ -237,6 +237,13 @@ export const api = {
       method: 'DELETE',
     }),
 
+  /** 立即调用 MaaFramework（MaaPiCli）在指定模拟器上执行一条导航任务（用于实测导入的导航）。 */
+  runNavTask: (accountId: string, taskName: string) =>
+    post<{ ok: boolean; accountId: string; taskName: string; output?: string }>('/api/nav/run', {
+      accountId,
+      taskName,
+    }),
+
   /** 推关台账（哪关/难度/几星），空数组 = 还没打过。 */
   progress: () => request<{ stages: StageProgress[]; count: number }>('/api/progress'),
 

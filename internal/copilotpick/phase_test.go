@@ -66,7 +66,7 @@ func TestPatchPiNavConfigPreservesAdbPath(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cfgDir, "maa_pi_config.json"), []byte(initial), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := patchPiNavConfig(dir, "127.0.0.1:16416", "进入EX图"); err != nil {
+	if err := patchPiNavConfig(dir, "127.0.0.1:16416", "", "进入EX图"); err != nil {
 		t.Fatalf("patchPiNavConfig: %v", err)
 	}
 	raw, err := os.ReadFile(filepath.Join(cfgDir, "maa_pi_config.json"))

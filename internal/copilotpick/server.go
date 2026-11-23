@@ -35,6 +35,7 @@ func NewHandler(m *Manager) http.Handler {
 	mux.HandleFunc("POST /api/pi/enqueue", h.piEnqueue)
 	mux.HandleFunc("GET /api/nav/packs", h.navPacksList)
 	mux.HandleFunc("POST /api/nav/import", h.navPackImport)
+	mux.HandleFunc("POST /api/nav/run", h.navPackRun)
 	mux.HandleFunc("DELETE /api/nav/packs/{id}", h.navPackDelete)
 	mux.HandleFunc("GET /api/accounts", h.accounts)
 	mux.HandleFunc("POST /api/box", h.box)
