@@ -35,6 +35,7 @@ import { StepCard } from './components/StepCard'
 import { TopBar } from './components/TopBar'
 import { Icon } from './components/icons'
 import { PiProjectsPanel } from './components/PiProjectsPanel'
+import { AutoEventPanel } from './components/AutoEventPanel'
 
 // 本地设置（只影响下一次开始执行，存在浏览器里）。
 const SETTINGS_KEY = 'copilot-picker.settings.v1'
@@ -1815,6 +1816,15 @@ export function App() {
         maaError={maaError}
         retryLoading={healthLoading || accountsLoading}
         onRetry={() => void reloadService()}
+      />
+
+      <AutoEventPanel
+        accounts={accounts}
+        activeRunId={runId}
+        onSelectRun={(id) => {
+          setRunId(id)
+          setSnapshot(null)
+        }}
       />
 
       <PiProjectsPanel accounts={accounts} selectedAccountId={selectedAccountId} />

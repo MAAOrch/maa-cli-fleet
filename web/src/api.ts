@@ -193,11 +193,35 @@ export const api = {
 
   startRun: (options: RunOptions) => post<{ runId: string }>('/api/run/start', options),
 
-  /** 当前还没结束的 run（刷新页面/重开客户端后用来恢复执行面板与停止按钮）。 */
+  /** 一键全自动推活动：自动扫箱 + 挑作业 + 按阶段（普通/EX/S）分流启动。 */
+  startAutoEvent: (body: {
+    accountId: string
+    stageCodes: string[]
+    phases?: string[]
+    autoScanBox?: boolean
+    includeCleared?: boolean
+    useSupport?: boolean
+    maxAttempts?: number
+    timeoutMin?: number
+    piProject?: string
+  }) =>
+    post<{
+      runId: string
+      accountId: string
+      stageCount: number
+      phases: Record<string, number>
+      scannedBox: boolean
+      rosterSize: number
+      skipped?: string[]
+    }>('/api/auto-event/start', body),
+
   /** 推关台账（哪关/难度/几星），空数组 = 还没打过。 */
   progress: () => request<{ stages: StageProgress[]; count: number }>('/api/progress'),
 
   activeRun: () => request<{ run: RunSnapshot | null }>('/api/run/active'),
+
+  /** 所有并发运行中的模拟器任务快照（多模拟器并发视图）。 */
+  activeRuns: () => request<{ runs: RunSnapshot[] }>('/api/runs/active'),
 
   /** 不依赖 runId，直接停掉当前正在跑的 run。 */
   stopActiveRun: () => post<{ ok: boolean; stopped: boolean }>('/api/run/stop', {}),

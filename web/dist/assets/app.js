@@ -20111,10 +20111,13 @@ const api = {
         return raw;
     },
     startRun: (options) => post('/api/run/start', options),
-    /** 当前还没结束的 run（刷新页面/重开客户端后用来恢复执行面板与停止按钮）。 */
+    /** 一键全自动推活动：自动扫箱 + 挑作业 + 按阶段（普通/EX/S）分流启动。 */
+    startAutoEvent: (body) => post('/api/auto-event/start', body),
     /** 推关台账（哪关/难度/几星），空数组 = 还没打过。 */
     progress: () => request('/api/progress'),
     activeRun: () => request('/api/run/active'),
+    /** 所有并发运行中的模拟器任务快照（多模拟器并发视图）。 */
+    activeRuns: () => request('/api/runs/active'),
     /** 不依赖 runId，直接停掉当前正在跑的 run。 */
     stopActiveRun: () => post('/api/run/stop', {}),
     /** 停掉当前 run 并清理本服务启动的残留 maa-cli 进程。 */
@@ -20448,6 +20451,134 @@ function PiProjectsPanel({ accounts = [], selectedAccountId = '' }) {
                                     return (jsxRuntimeExports.jsx("button", { type: "button", className: "text-xs border rounded px-2 py-0.5 hover:bg-blue-50 disabled:opacity-50", disabled: busy === key, onClick: () => enqueue(p.name, e), children: busy === key ? '...' : e }, e));
                                 }), hiddenCount > 0 && (jsxRuntimeExports.jsxs("button", { type: "button", className: "text-xs text-blue-600 px-1.5 py-0.5 hover:underline", onClick: () => setExpanded((prev) => ({ ...prev, [p.name]: true })), children: ["\u5C55\u5F00\u5176\u4F59 ", hiddenCount, " \u9879"] })), isExpanded && p.entries.length > DEFAULT_VISIBLE && (jsxRuntimeExports.jsx("button", { type: "button", className: "text-xs text-gray-500 px-1.5 py-0.5 hover:underline", onClick: () => setExpanded((prev) => ({ ...prev, [p.name]: false })), children: "\u6536\u8D77" }))] })] }, p.name));
             }), msg && jsxRuntimeExports.jsx("p", { className: "text-xs mt-2 text-gray-600", children: msg })] }));
+}
+
+const PHASE_OPTIONS = [
+    { id: 'main', label: '第 1 阶段（普通图）' },
+    { id: 'ex', label: '第 2 阶段（EX 图）' },
+    { id: 's', label: '第 3 阶段（S 图）' },
+];
+function phaseBadge(phase) {
+    switch (phase) {
+        case 'main':
+            return '第1阶段';
+        case 'ex':
+            return '第2阶段 EX';
+        case 's':
+            return '第3阶段 S';
+        default:
+            return '';
+    }
+}
+function AutoEventPanel({ accounts, activeRunId, onSelectRun }) {
+    const [open, setOpen] = reactExports.useState(false);
+    const [selectedAccounts, setSelectedAccounts] = reactExports.useState([]);
+    const [groups, setGroups] = reactExports.useState([]);
+    const [selectedGroup, setSelectedGroup] = reactExports.useState('');
+    const [stagesText, setStagesText] = reactExports.useState('');
+    const [phases, setPhases] = reactExports.useState(['main', 'ex', 's']);
+    const [autoScanBox, setAutoScanBox] = reactExports.useState(true);
+    const [busy, setBusy] = reactExports.useState(false);
+    const [notice, setNotice] = reactExports.useState('');
+    const [running, setRunning] = reactExports.useState([]);
+    reactExports.useEffect(() => {
+        if (selectedAccounts.length === 0 && accounts.length > 0) {
+            const enabled = accounts.filter((a) => a.enabled).slice(0, 2).map((a) => a.id);
+            setSelectedAccounts(enabled.length > 0 ? enabled : [accounts[0].id]);
+        }
+    }, [accounts]);
+    reactExports.useEffect(() => {
+        api
+            .stageCatalog()
+            .then((res) => {
+            const list = res.groups ?? [];
+            setGroups(list);
+        })
+            .catch(() => { });
+    }, []);
+    reactExports.useEffect(() => {
+        let cancelled = false;
+        const poll = () => {
+            api
+                .activeRuns()
+                .then((res) => {
+                if (!cancelled)
+                    setRunning(res.runs ?? []);
+            })
+                .catch(() => { });
+        };
+        poll();
+        const timer = window.setInterval(poll, 3000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(timer);
+        };
+    }, []);
+    function toggleAccount(id) {
+        setSelectedAccounts((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+    }
+    function togglePhase(p) {
+        setPhases((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
+    }
+    function applyGroup(name) {
+        setSelectedGroup(name);
+        const found = groups.find((g) => g.name === name);
+        if (found) {
+            setStagesText(found.stages.join(', '));
+        }
+    }
+    async function handleStartAll() {
+        const codes = stagesText
+            .split(/[\s,，;；]+/)
+            .map((s) => s.trim())
+            .filter(Boolean);
+        if (selectedAccounts.length === 0) {
+            setNotice('请至少勾选一个账号/模拟器');
+            return;
+        }
+        if (codes.length === 0) {
+            setNotice('请选择活动分组或输入关卡代号（如 OS-1, OS-2, OS-EX-1）');
+            return;
+        }
+        if (phases.length === 0) {
+            setNotice('请至少勾选一个阶段');
+            return;
+        }
+        setBusy(true);
+        setNotice('');
+        const results = [];
+        let firstRunId = '';
+        for (const accId of selectedAccounts) {
+            try {
+                const res = await api.startAutoEvent({
+                    accountId: accId,
+                    stageCodes: codes,
+                    phases,
+                    autoScanBox,
+                    useSupport: true,
+                });
+                if (!firstRunId)
+                    firstRunId = res.runId;
+                results.push(`${accId}: 已启动 ${res.stageCount} 关`);
+            }
+            catch (err) {
+                results.push(`${accId}: ${describeError(err)}`);
+            }
+        }
+        if (firstRunId)
+            onSelectRun(firstRunId);
+        setNotice(results.join(' ｜ '));
+        setBusy(false);
+    }
+    async function handleStop(id) {
+        try {
+            await api.stopRun(id);
+        }
+        catch {
+            // ignore
+        }
+    }
+    return (jsxRuntimeExports.jsxs("div", { className: "border rounded p-3 mb-3 bg-gray-50", children: [jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between gap-2", children: [jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [jsxRuntimeExports.jsx("strong", { className: "text-sm", children: "\u4E00\u952E\u5168\u81EA\u52A8\u63A8\u6D3B\u52A8\uFF08\u6309\u9636\u6BB5\u5206\u6D41 \u00B7 \u652F\u6301\u591A\u6A21\u62DF\u5668\u5E76\u53D1\uFF09" }), running.length > 0 && (jsxRuntimeExports.jsxs("span", { className: "text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-800", children: ["\u8FD0\u884C\u4E2D ", running.length, " \u53F0"] }))] }), jsxRuntimeExports.jsx("button", { type: "button", className: "text-xs border rounded px-2 py-0.5 hover:bg-white", onClick: () => setOpen((v) => !v), children: open ? '收起' : '展开配置' })] }), running.length > 0 && (jsxRuntimeExports.jsx("div", { className: "flex flex-wrap gap-2 mt-2", children: running.map((r) => (jsxRuntimeExports.jsxs("div", { className: `flex items-center gap-2 text-xs border rounded px-2 py-1 bg-white ${activeRunId === r.id ? 'border-blue-500' : ''}`, children: [jsxRuntimeExports.jsxs("button", { type: "button", className: "font-mono hover:underline", onClick: () => onSelectRun(r.id), children: [r.accountName || r.accountId, r.phase ? ` · ${phaseBadge(r.phase)}` : '', ` · ${r.stageIndex ?? 1}/${r.stageTotal ?? 1} ${r.stageCode}`] }), jsxRuntimeExports.jsx("button", { type: "button", className: "text-red-600 hover:underline", onClick: () => void handleStop(r.id), children: "\u505C\u6B62" })] }, r.id))) })), open && (jsxRuntimeExports.jsxs("div", { className: "mt-3 space-y-2 text-xs", children: [jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [jsxRuntimeExports.jsx("span", { className: "font-medium", children: "\u6A21\u62DF\u5668/\u8D26\u53F7\uFF1A" }), accounts.map((a) => (jsxRuntimeExports.jsxs("label", { className: "inline-flex items-center gap-1 cursor-pointer", children: [jsxRuntimeExports.jsx("input", { type: "checkbox", checked: selectedAccounts.includes(a.id), onChange: () => toggleAccount(a.id) }), jsxRuntimeExports.jsxs("span", { children: [a.id, a.name ? `(${a.name})` : ''] })] }, a.id)))] }), jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [jsxRuntimeExports.jsx("span", { className: "font-medium", children: "\u9636\u6BB5\u5206\u6D41\uFF1A" }), PHASE_OPTIONS.map((p) => (jsxRuntimeExports.jsxs("label", { className: "inline-flex items-center gap-1 cursor-pointer", children: [jsxRuntimeExports.jsx("input", { type: "checkbox", checked: phases.includes(p.id), onChange: () => togglePhase(p.id) }), jsxRuntimeExports.jsx("span", { children: p.label })] }, p.id))), jsxRuntimeExports.jsxs("label", { className: "inline-flex items-center gap-1 ml-2 cursor-pointer", children: [jsxRuntimeExports.jsx("input", { type: "checkbox", checked: autoScanBox, onChange: (e) => setAutoScanBox(e.target.checked) }), jsxRuntimeExports.jsx("span", { children: "\u542F\u52A8\u524D\u81EA\u52A8\u626B\u63CF\u5E72\u5458" })] })] }), jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [jsxRuntimeExports.jsx("span", { className: "font-medium", children: "\u6D3B\u52A8\u5206\u7EC4\uFF1A" }), jsxRuntimeExports.jsxs("select", { className: "border rounded px-1.5 py-0.5 bg-white", value: selectedGroup, onChange: (e) => applyGroup(e.target.value), children: [jsxRuntimeExports.jsx("option", { value: "", children: "-- \u9009\u62E9\u6D3B\u52A8\u5FEB\u6377\u586B\u5145 --" }), groups.map((g) => (jsxRuntimeExports.jsxs("option", { value: g.name, children: [g.name, "\uFF08", g.stages.length, " \u5173\uFF09"] }, g.name)))] }), jsxRuntimeExports.jsx("input", { className: "border rounded px-2 py-0.5 flex-1 min-w-[220px] bg-white font-mono", placeholder: "\u5173\u5361\u4EE3\u53F7\uFF0C\u9017\u53F7\u5206\u9694\uFF0C\u5982 OS-1, OS-2, OS-EX-1, OS-S-1", value: stagesText, onChange: (e) => setStagesText(e.target.value) }), jsxRuntimeExports.jsx("button", { type: "button", className: "border rounded px-3 py-1 bg-blue-600 text-white disabled:opacity-50", disabled: busy, onClick: () => void handleStartAll(), children: busy ? '正在扫箱与匹配作业…' : '开始全自动推关' })] }), notice && jsxRuntimeExports.jsx("p", { className: "text-gray-700", children: notice })] }))] }));
 }
 
 // 本地设置（只影响下一次开始执行，存在浏览器里）。
@@ -21762,7 +21893,10 @@ function App() {
     const selectedStageText = selectedStage
         ? `${selectedStage.code}${selectedStage.stageName ? ` → ${selectedStage.stageName}` : ''}`
         : '';
-    return (jsxRuntimeExports.jsxs("div", { className: "app-shell", children: [jsxRuntimeExports.jsx("div", { className: "bg-grid", "aria-hidden": "true" }), jsxRuntimeExports.jsx(TopBar, { health: health, healthLoading: healthLoading, maaReady: maaReady, onRefresh: () => void reloadService(), onOpenSettings: () => setSettingsOpen(true) }), jsxRuntimeExports.jsx(ServiceBanner, { down: serviceDown, healthError: healthError, maaReady: maaReady, maaError: maaError, retryLoading: healthLoading || accountsLoading, onRetry: () => void reloadService() }), jsxRuntimeExports.jsx(PiProjectsPanel, { accounts: accounts, selectedAccountId: selectedAccountId }), jsxRuntimeExports.jsx("main", { className: "app-main", children: jsxRuntimeExports.jsxs("div", { className: "workspace", children: [jsxRuntimeExports.jsxs("div", { className: "ws-col ws-left", children: [jsxRuntimeExports.jsx(StepCard, { step: "01", title: "\u8D26\u53F7\u4E0E\u540D\u518C", hint: "\u9009\u673A\u961F\u8D26\u53F7\uFF0C\u7C98\u8D34\u6216\u8BFB\u53D6 MAA \u5E72\u5458\u8BC6\u522B\u7ED3\u679C", aside: jsxRuntimeExports.jsx("span", { className: `step-flag ${selectedAccount ? 'is-ok' : ''}`, children: selectedAccount
+    return (jsxRuntimeExports.jsxs("div", { className: "app-shell", children: [jsxRuntimeExports.jsx("div", { className: "bg-grid", "aria-hidden": "true" }), jsxRuntimeExports.jsx(TopBar, { health: health, healthLoading: healthLoading, maaReady: maaReady, onRefresh: () => void reloadService(), onOpenSettings: () => setSettingsOpen(true) }), jsxRuntimeExports.jsx(ServiceBanner, { down: serviceDown, healthError: healthError, maaReady: maaReady, maaError: maaError, retryLoading: healthLoading || accountsLoading, onRetry: () => void reloadService() }), jsxRuntimeExports.jsx(AutoEventPanel, { accounts: accounts, activeRunId: runId, onSelectRun: (id) => {
+                    setRunId(id);
+                    setSnapshot(null);
+                } }), jsxRuntimeExports.jsx(PiProjectsPanel, { accounts: accounts, selectedAccountId: selectedAccountId }), jsxRuntimeExports.jsx("main", { className: "app-main", children: jsxRuntimeExports.jsxs("div", { className: "workspace", children: [jsxRuntimeExports.jsxs("div", { className: "ws-col ws-left", children: [jsxRuntimeExports.jsx(StepCard, { step: "01", title: "\u8D26\u53F7\u4E0E\u540D\u518C", hint: "\u9009\u673A\u961F\u8D26\u53F7\uFF0C\u7C98\u8D34\u6216\u8BFB\u53D6 MAA \u5E72\u5458\u8BC6\u522B\u7ED3\u679C", aside: jsxRuntimeExports.jsx("span", { className: `step-flag ${selectedAccount ? 'is-ok' : ''}`, children: selectedAccount
                                             ? `${selectedAccount.name}${selectedAccount.client ? ` · ${clientLabel(selectedAccount.client)}` : ''}`
                                             : '未选账号' }), children: jsxRuntimeExports.jsx(AccountStep, { accounts: accounts, selectedId: selectedAccountId, onSelect: setSelectedAccountId, loading: accountsLoading, error: accountsError, onReload: () => void reloadService(), onStartEmu: () => void handleStartEmu(), emuStarting: emuStarting, emuNotice: emuNotice, disabled: serviceDown, rosterText: rosterText, onRosterText: setRosterText, roster: roster, rosterLoading: rosterLoading, rosterError: rosterError, onParse: () => void handleParseRoster(), onLoadMaa: () => void handleLoadMaa(), maaLoading: maaLoading, onScanMaa: () => void handleScanMaa(), scanLoading: scanLoading, onPaste: () => void handlePaste(), pasteMessage: pasteMessage }) }), jsxRuntimeExports.jsx(StepCard, { step: "02", title: "\u5173\u5361", hint: "\u89E3\u6790\u6E38\u620F\u5185\u4EE3\u53F7\uFF08\u53EF\u591A\u4E2A\uFF09\uFF0C\u591A\u9009\u8981\u6253\u7684\u5173\u5361", aside: selectedStages.length > 0 ? (jsxRuntimeExports.jsxs("span", { className: "step-flag mono is-ok", title: selectedStageText, children: ["\u5DF2\u9009 ", selectedStages.length, " \u5173"] })) : (jsxRuntimeExports.jsx("span", { className: "step-flag", children: "\u672A\u9009\u5173\u5361" })), children: jsxRuntimeExports.jsx(StageStep, { query: stageQuery, onQuery: setStageQuery, onResolve: () => void handleResolveStages(), loading: stageLoading, error: stageError, stages: stages, selected: selectedStages, onToggle: handleToggleStage, onSelectAll: handleSelectAllStages, onClear: handleClearStages, disabled: serviceDown, customStages: customStages, onQuickStage: (code) => void handleQuickStage(code), onAddCustomStages: handleAddCustomStages, onDeleteCustomStage: handleDeleteCustomStage }) })] }), jsxRuntimeExports.jsx("div", { className: "ws-col ws-mid", children: jsxRuntimeExports.jsx(StepCard, { step: "03", title: "\u4F5C\u4E1A\u4E0E\u6267\u884C", hint: "\u641C\u7D22\u4F5C\u4E1A\u3001\u8C03\u6574\u5C1D\u8BD5\u987A\u5E8F\u3001\u5F00\u59CB\u6267\u884C", aside: jsxRuntimeExports.jsxs("span", { className: "step-flag", children: ["\u5DF2\u9009 ", selectedIds.length, " \u4EFD"] }), children: jsxRuntimeExports.jsx(JobsStep, { stage: selectedStage, stages: selectedStages, onSelectActive: handleSelectActiveStage, multiSearch: multiSearch, multiSelected: multiSelected, multiLoading: multiLoading, multiError: multiError, onSearchAll: () => void handleSearchAllStages(), onToggleMulti: handleToggleMultiJob, onAddMultiQueue: handleAddMultiToQueue, onClearMulti: handleClearMulti, rosterParsed: roster !== null, search: search, loading: searchLoading, error: searchError, stale: searchStale, onSearch: () => void handleSearchJobs(), selectedIds: selectedIds, onToggle: handleToggleJob, onMove: handleMoveJob, onStart: () => void handleStart(), onAddToQueue: handleAddToQueue, onBatchQueue: () => void handleBatchQueue(), batchQueueing: batchQueueing, batchNotice: batchNotice, canQueue: canAddToQueue, canStart: canStart, queueCount: queue.length, startLabel: startLabel, starting: starting, startError: startError, disabled: serviceDown || runActive || searchLoading, manualMode: settings.manualMode, mode: jobMode, onModeChange: handleJobModeChange }) }) }), jsxRuntimeExports.jsxs("div", { className: "ws-col ws-right", children: [jsxRuntimeExports.jsx(StepCard, { step: "04", title: "\u6267\u884C\u961F\u5217\uFF08\u534A\u81EA\u52A8\uFF09", hint: "\u4EBA\u5DE5\u9009\u597D\u6BCF\u4E00\u5173\u548C\u5019\u9009\u4F5C\u4E1A\uFF0C\u7A0B\u5E8F\u6309\u987A\u5E8F\u9010\u5173\u6267\u884C\uFF1B\u6BCF\u5173\u5931\u8D25\u81EA\u52A8\u6362\u4E0B\u4E00\u4EFD", aside: jsxRuntimeExports.jsx("span", { className: `step-flag ${queue.length > 0 ? 'is-ok' : ''}`, children: queue.length > 0 ? `${queue.length} 关` : '空' }), children: jsxRuntimeExports.jsx(QueuePanel, { queue: queue, disabled: serviceDown || runActive, onRemove: handleRemoveQueue, onMove: handleMoveQueue, onClear: handleClearQueue }) }), jsxRuntimeExports.jsx(StepCard, { step: "05", title: "\u63A8\u5173\u53F0\u8D26", hint: "\u6267\u884C\u6210\u529F\u540E\u6309\u300C\u5173\u5361 + \u96BE\u5EA6\u300D\u8BB0\u661F\uFF1B\u666E\u901A 3 \u661F\u624D\u89E3\u9501\u7A81\u88AD", aside: jsxRuntimeExports.jsx("span", { className: `step-flag ${progress.length > 0 ? 'is-ok' : ''}`, children: progress.length > 0 ? `${progress.length} 条` : '空' }), children: jsxRuntimeExports.jsx(ProgressPanel, { items: progress, loading: progressLoading, error: progressError, onRefresh: () => void reloadProgress(), disabled: serviceDown }) }), jsxRuntimeExports.jsx("aside", { className: "run-panel", "aria-label": "\u6267\u884C\u9762\u677F", children: jsxRuntimeExports.jsx(RunPanel, { runId: runId, snapshot: snapshot, events: events, runError: runError, streamError: streamError, shotTs: shotTs, shotFailed: shotFailed, stopping: stopping, maaLogText: maaLogText, maaLogError: maaLogError, maaLogMissing: maaLogMissing, killMaaLoading: killMaaLoading, killMaaNotice: killMaaNotice, onStop: () => void handleStop(), onShotError: () => setShotFailed(true), onKillMaa: () => void handleKillMaa() }) })] })] }) }), jsxRuntimeExports.jsx(SettingsDrawer, { open: settingsOpen, settings: settings, clients: clientOptions, accountClient: selectedAccount?.client ?? '', onClose: () => setSettingsOpen(false), onChange: updateSettings })] }));
 }

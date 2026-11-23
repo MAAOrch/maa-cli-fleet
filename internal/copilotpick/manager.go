@@ -18,17 +18,18 @@ import (
 	"github.com/xiachk083-hub/maa-cli-fleet/internal/copilotpick/model"
 )
 
-// Manager 持有配置、账号/关卡缓存与正在执行的 run（同一时刻只允许一个）。
+// Manager 持有配置、账号/关卡缓存与正在执行的 run（按账号/设备隔离，支持多模拟器并发）。
 type Manager struct {
-	cfg      Config
-	prts     *ext.PrtsClient
-	localMu  sync.Mutex
-	local    []model.Stage
-	rosterMu sync.RWMutex
-	roster   model.Roster
-	runMu    sync.Mutex
-	runs     map[string]*Run
-	activeID string
+	cfg         Config
+	prts        *ext.PrtsClient
+	localMu     sync.Mutex
+	local       []model.Stage
+	rosterMu    sync.RWMutex
+	roster      model.Roster
+	runMu       sync.Mutex
+	runs        map[string]*Run
+	activeID    string            // 最近一次启动的 run（向后兼容单任务视图）
+	activeByAcc map[string]string // accountID -> runID（支持多模拟器并发）
 
 	// blocked 记录「有名册但编不进队」的 (干员, 技能序号)：来自 MAA 编队报错的
 	// `"reason":"Unavailable"`。作业要这些干员时直接跳过，省掉一次 40 秒空跑。
@@ -53,9 +54,10 @@ type BlockedOp struct {
 // NewManager 创建 Manager 并加载本地关卡表（失败不致命，解析时再兜底）。
 func NewManager(cfg Config) *Manager {
 	m := &Manager{
-		cfg:  cfg,
-		prts: ext.NewPrtsClient(cfg.PrtsBase),
-		runs: map[string]*Run{},
+		cfg:         cfg,
+		prts:        ext.NewPrtsClient(cfg.PrtsBase),
+		runs:        map[string]*Run{},
+		activeByAcc: map[string]string{},
 	}
 	_ = m.ReloadLocalStages()
 	m.loadRosterFile()
@@ -273,10 +275,19 @@ func (m *Manager) StartRun(opts model.RunOptions) (*Run, error) {
 	}
 
 	m.runMu.Lock()
-	if m.activeID != "" {
-		if r := m.runs[m.activeID]; r != nil && !r.IsDone() {
+	if m.activeByAcc == nil {
+		m.activeByAcc = map[string]string{}
+	}
+	// 按账号和设备地址隔离并发：不同模拟器可同时跑，同一账号或同一设备互斥。
+	for otherAcc, otherID := range m.activeByAcc {
+		other := m.runs[otherID]
+		if other == nil || other.IsDone() {
+			delete(m.activeByAcc, otherAcc)
+			continue
+		}
+		if otherAcc == acc.ID || (acc.Adb != "" && other.adb == acc.Adb) {
 			m.runMu.Unlock()
-			return nil, ErrBusy
+			return nil, fmt.Errorf("%w（账号 %s / 设备 %s）", ErrBusy, otherAcc, other.adb)
 		}
 	}
 	id := fmt.Sprintf("%s-%s", time.Now().Format("20060102-150405"), randSuffix(4))
@@ -288,6 +299,7 @@ func (m *Manager) StartRun(opts model.RunOptions) (*Run, error) {
 	r := newRun(m, id, dir, acc, opts)
 	m.runs[id] = r
 	m.activeID = id
+	m.activeByAcc[acc.ID] = id
 	m.runMu.Unlock()
 
 	if b, err := json.MarshalIndent(opts, "", "  "); err == nil {
@@ -380,10 +392,41 @@ func (m *Manager) CurrentRun() *Run {
 func (m *Manager) ActiveRunSnapshot() *model.RunSnapshot {
 	r := m.CurrentRun()
 	if r == nil || r.IsDone() {
+		// 若最近一次已结束，但还有其它模拟器在跑，回退返回其中一个活跃 run。
+		for _, snap := range m.ActiveRuns() {
+			cp := snap
+			return &cp
+		}
 		return nil
 	}
 	snap := r.Snapshot(false)
 	return &snap
+}
+
+// ActiveRuns 返回当前所有运行中的模拟器任务快照（按账号 ID 排序）。
+func (m *Manager) ActiveRuns() []model.RunSnapshot {
+	m.runMu.Lock()
+	var list []*Run
+	for accID, runID := range m.activeByAcc {
+		r := m.runs[runID]
+		if r == nil || r.IsDone() {
+			delete(m.activeByAcc, accID)
+			continue
+		}
+		list = append(list, r)
+	}
+	m.runMu.Unlock()
+	out := make([]model.RunSnapshot, 0, len(list))
+	for _, r := range list {
+		out = append(out, r.Snapshot(false))
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].AccountID != out[j].AccountID {
+			return out[i].AccountID < out[j].AccountID
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
 }
 
 // KillStrayMaa 杀掉本服务启动、但已经没人管理的 maa-cli 进程。

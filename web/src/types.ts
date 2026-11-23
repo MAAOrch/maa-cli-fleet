@@ -99,6 +99,8 @@ export interface StagePlan {
   stageCode: string
   /** 作业站关卡代码，如 act55side_09 */
   stageName: string
+  /** 所属活动地图页：main | ex | s */
+  phase?: string
   jobIds: number[]
   /** difficulty=2/3（突袭/磨难）的作业：执行时按突袭（is_raid=true） */
   raidJobIds?: number[]
@@ -119,6 +121,10 @@ export interface RunOptions {
   addTrust: boolean
   ignoreRequirements: boolean
   manualMode: boolean
+  onMap?: boolean
+  /** 阶段分流模式：按 main → ex → s 自动分组，切阶段时才做页面级 PI 导航 */
+  phaseNav?: boolean
+  piProject?: string
   maxAttempts: number
   supportUnitUsage: number
   timeoutMin: number
@@ -147,6 +153,8 @@ export interface RunSnapshot {
   client: string
   stageCode: string
   stageName: string
+  /** 当前阶段：main | ex | s */
+  phase?: string
   /** 当前是队列里的第几关（1 起） */
   stageIndex?: number
   /** 队列总关数（1 = 单关） */
