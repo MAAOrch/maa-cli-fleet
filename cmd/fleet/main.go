@@ -209,6 +209,16 @@ func main() {
 			fmt.Fprintln(os.Stderr, "setup 失败：", err)
 			os.Exit(1)
 		}
+	case "mas":
+		if err := runMas(args); err != nil {
+			fmt.Fprintln(os.Stderr, "mas 失败：", err)
+			os.Exit(1)
+		}
+	case "pi":
+		if err := runPi(args, root); err != nil {
+			fmt.Fprintln(os.Stderr, "pi 失败：", err)
+			os.Exit(1)
+		}
 	case "version", "-v", "--version":
 		fmt.Printf("fleet %s (root=%s)\n", version, root)
 	case "help", "-h", "--help":
