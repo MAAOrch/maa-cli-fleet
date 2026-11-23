@@ -56,10 +56,10 @@ def load_event(event: str) -> dict:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
-def enter_drill(code: str, raid: bool) -> bool:
-    """PI 把游戏从任意界面带到「演习编队页」。返回是否成功。
+def enter_drill(code: str, raid: bool, drill: bool = True) -> bool:
+    """PI 把游戏从任意界面带到「演习编队页」（drill=True）或「正式关卡详情/地图页」（drill=False）。
 
-    S 关走专用详情链；普通关（OS-1 等）先进图，详情页由后续 MAA find_stage 处理。
+    S 关走专用详情链；普通关（OS-1 等）与 EX 关先进图，详情页由后续 MAA find_stage 处理。
     """
     # 第一步「收结算页」只是归位，失败不算致命（常在结算/地图页上失败但状态已可用）
     run_task("收结算页", timeout=180)
@@ -74,8 +74,8 @@ def enter_drill(code: str, raid: bool) -> bool:
         steps.append("进入普通图")
     if raid:
         steps.append("切突袭模式")
-    # 演习按钮在详情页；普通关先进图，详情由后续流程处理
-    if "-S-" in code:
+    # 演习按钮在详情页；正式打（drill=False）不点演习，留在详情/地图页直接耗理智开打
+    if drill and "-S-" in code:
         steps.append("进入演习")
     for step in steps:
         ok, _ = run_task(step, timeout=200)
@@ -85,14 +85,16 @@ def enter_drill(code: str, raid: bool) -> bool:
     return True
 
 
-def run_round(bundle: pathlib.Path, ctx: dict, candidate: pathlib.Path, args) -> dict:
-    """跑一轮演习，返回 battle_report。"""
-    round_dir = bundle / "rounds" / f"round-{args._round:02d}"
+def run_round(bundle: pathlib.Path, ctx: dict, candidate: pathlib.Path, args, real: bool = False) -> dict:
+    """跑一轮演习（real=False）或真理智正式打（real=True），返回 battle_report。"""
+    tag = f"real-{args._round:02d}" if real else f"round-{args._round:02d}"
+    mode_label = "正式打（真理智）" if real else "演习"
+    round_dir = bundle / "rounds" / tag
     round_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(candidate, round_dir / "candidate.json")
 
-    if not enter_drill(ctx["stage"]["code"], bool(ctx["stage"]["raid"])):
-        raise SystemExit("进演习失败（PI 导航）")
+    if not enter_drill(ctx["stage"]["code"], bool(ctx["stage"]["raid"]), drill=not real):
+        raise SystemExit(f"进{mode_label}失败（PI 导航）")
 
     event = load_event(args.event)
     device = event.get("device", "127.0.0.1:16384")
@@ -107,7 +109,7 @@ def run_round(bundle: pathlib.Path, ctx: dict, candidate: pathlib.Path, args) ->
                 print(f"[planb] 熔断请求失败：{e}")
 
     observer = obs.BattleObserver(device, round_dir, interval=args.poll_interval,
-                                  early_stop=not args.no_early_stop, stop_cb=_stop_run)
+                                  early_stop=(not args.no_early_stop) and (not real), stop_cb=_stop_run)
     observer.start()
     try:
         is_s = "-S-" in ctx["stage"]["code"]
@@ -123,11 +125,11 @@ def run_round(bundle: pathlib.Path, ctx: dict, candidate: pathlib.Path, args) ->
             "maxAttempts": 1,
             "timeoutMin": args.timeout_min,
             "copilotFile": str(candidate.resolve()),
-            "noProgress": True,
+            "noProgress": not real,
         })
         run_id = r["runId"]
         run_holder["id"] = run_id
-        print(f"[planb] 演习 run={run_id}（白盒观察中，{args.poll_interval}s/帧，raw 帧低开销采样…）")
+        print(f"[planb] {mode_label} run={run_id}（白盒观察中，{args.poll_interval}s/帧，raw 帧低开销采样…）")
         deadline = time.time() + args.timeout_min * 60 + 300
         status = "?"
         while time.time() < deadline:
@@ -200,6 +202,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-early-stop", action="store_true",
                     help="关闭演习熔断（默认开启：蓝门掉血/99费停滞 25s 即中止本局）")
     ap.add_argument("--skip-validate", action="store_true")
+    ap.add_argument("--auto-real", action="store_true",
+                    help="Phase 2：演习满 3★ 后自动退出演习并切真理智正式打（记入进度台账）")
+    ap.add_argument("--real-only", action="store_true",
+                    help="Phase 2：跳过演习，直接用 candidate.json 耗真理智正式打")
     ap.add_argument("--dry-run", action="store_true", help="只校验+打印流程，不进游戏")
     args = ap.parse_args(argv)
 
@@ -236,9 +242,23 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[validator] 通过（0 error, {len(warns)} warn）")
 
     if args.dry_run:
-        print("[planb][dry-run] 校验通过；流程：PI 收结算→进S图→进S-N详情→切突袭→演习 → "
-              "picker 演练 candidate → 观察 → 战报")
+        mode = "直接正式打（--real-only）" if args.real_only else (
+            "演习 3★ 后自动切真理智正式打（--auto-real）" if args.auto_real else "仅演习"
+        )
+        print(f"[planb][dry-run] 校验通过；模式：{mode}；流程：PI 导航 → picker 执行 candidate → 观察 → 战报")
         return 0
+
+    if args.real_only:
+        real_existing = [int(d.name.split("-")[1]) for d in (bundle / "rounds").glob("real-*")
+                         if d.name.split("-")[1].isdigit()] if (bundle / "rounds").exists() else []
+        args._round = (max(real_existing) if real_existing else 0) + 1
+        rep = run_round(bundle, ctx, cand, args, real=True)
+        run_task("收结算页", timeout=180)
+        if rep.get("stars") == 3:
+            print("[planb] 真理智正式打 3★ 通关！")
+            return 0
+        print(f"[planb] 真理智正式打未满 3★（stars={rep.get('stars')}），请查看战报")
+        return 2
 
     # 轮次目录续编号：已有 round-NN 就从 NN+1 开始，避免覆盖历史战报
     existing = [int(d.name.split("-")[1]) for d in (bundle / "rounds").glob("round-*")
@@ -247,12 +267,24 @@ def main(argv: list[str] | None = None) -> int:
     last = None
     for i in range(1, args.rounds + 1):
         args._round = base_round + i
-        last = run_round(bundle, ctx, cand, args)
+        last = run_round(bundle, ctx, cand, args, real=False)
         if last.get("stars") == 3:
-            print("[planb] 演习 3★！可以切真理智正式打（Phase 2 会接自动正式打）")
             run_task("退出演习", timeout=60)
             run_task("收结算页", timeout=180)
-            return 0
+            if not args.auto_real:
+                print("[planb] 演习 3★！可加 --auto-real 或 --real-only 自动切真理智正式打")
+                return 0
+            print("[planb] 演习 3★！Phase 2：自动切真理智正式打…")
+            real_existing = [int(d.name.split("-")[1]) for d in (bundle / "rounds").glob("real-*")
+                             if d.name.split("-")[1].isdigit()] if (bundle / "rounds").exists() else []
+            args._round = (max(real_existing) if real_existing else 0) + 1
+            real_rep = run_round(bundle, ctx, cand, args, real=True)
+            run_task("收结算页", timeout=180)
+            if real_rep.get("stars") == 3:
+                print("[planb] 真理智正式打 3★ 通关并记入进度台账！")
+                return 0
+            print(f"[planb] 正式打未满 3★（stars={real_rep.get('stars')}），请检查战报")
+            return 2
         write_next_prompt(bundle, last)
         print(f"[planb] 未满 3★，下一轮提示：{pathlib.Path(last['candidate']).parent / 'next_round_prompt.md'}")
 
