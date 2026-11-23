@@ -16,6 +16,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -88,6 +89,8 @@ func (s *Server) saveLocked() {
 func (s *Server) event(rec map[string]any) {
 	rec["ts"] = now()
 	b, _ := json.Marshal(rec)
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	f, err := os.OpenFile(filepath.Join(s.stateDir, "events.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return
@@ -252,19 +255,19 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	_ = enc.Encode(v)
 }
 
+const maxBodyBytes = 4 << 20
+
 func readBody(r *http.Request) ([]byte, error) {
 	defer r.Body.Close()
-	buf := make([]byte, 0, 4096)
-	tmp := make([]byte, 4096)
-	for {
-		n, err := r.Body.Read(tmp)
-		buf = append(buf, tmp[:n]...)
-		if err != nil {
-			break
-		}
+	buf, err := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes+1))
+	if err != nil {
+		return nil, err
 	}
 	if len(buf) == 0 {
 		return nil, fmt.Errorf("empty")
+	}
+	if len(buf) > maxBodyBytes {
+		return nil, fmt.Errorf("body too large")
 	}
 	return buf, nil
 }

@@ -362,7 +362,7 @@ func (r *Runner) working(key string) bool {
 func (r *Runner) Enqueue(spec string) error {
 	parts := strings.SplitN(spec, ":", 2)
 	if len(parts) != 2 {
-		return fmt.Errorf("格式：<daily|ann>:<accountId>")
+		return fmt.Errorf("格式：<daily|ann|pi.<project>.<entry>>:<accountId>")
 	}
 	kind, id := parts[0], parts[1]
 	var acc *model.Account
@@ -379,6 +379,13 @@ func (r *Runner) Enqueue(spec string) error {
 		file = acc.AnnTask
 		if file == "" {
 			return fmt.Errorf("%s 没有剿灭任务", id)
+		}
+	} else if strings.HasPrefix(kind, "pi.") {
+		_, entry := parsePiKind(kind)
+		if entry != "" {
+			file = entry
+		} else {
+			file = kind
 		}
 	}
 	key := kind + ":" + id
@@ -478,26 +485,35 @@ func (r *Runner) LogRoster() {
 // Status 打印队列视图。
 func (r *Runner) Status() {
 	day := gameDay()
-	queued, running, doneD, doneA, failed := 0, 0, 0, 0, 0
+	queued, running, doneD, doneA, donePi, piActive, failed := 0, 0, 0, 0, 0, 0, 0
 	rogueN := 0
 	var pend []string
 	r.mu.Lock()
 	for _, t := range r.state.Tasks {
+		isPi := strings.HasPrefix(t.Kind, "pi.")
 		switch t.State {
 		case "queued":
 			queued++
+			if isPi {
+				piActive++
+			}
 			pend = append(pend, t.Key)
 		case "running":
 			if t.Kind == "rogue" {
 				rogueN++
 			} else {
 				running++
+				if isPi {
+					piActive++
+				}
 			}
 		case "done":
 			if t.Kind == "daily" && t.Day == day {
 				doneD++
 			} else if t.Kind == "ann" && t.Week == weekKey() {
 				doneA++
+			} else if isPi && t.Day == day {
+				donePi++
 			}
 		case "failed":
 			failed++
@@ -510,8 +526,12 @@ func (r *Runner) Status() {
 	if r.MaintenanceOn() {
 		maint = "开（不派车 / 不扫模拟器）"
 	}
+	piSummary := ""
+	if donePi > 0 || piActive > 0 {
+		piSummary = fmt.Sprintf("｜今日 PI 完成 %d（活跃 %d）", donePi, piActive)
+	}
 	log.Printf("任务队列｜游戏日 %s｜账号 %d｜并发上限 %d（在跑 %d，常驻任务 %d）｜维护 %s｜资源 空闲 %dMB / CPU %.0f%%", day, total, r.cfg.MaxConcurrent, running, rogueN, maint, FreeRAMMB(), r.CPUPercent())
-	log.Printf("  今日日常完成 %d/%d｜本周剿灭完成 %d｜队列待跑 %d｜失败 %d%s", doneD, total, doneA, queued, failed,
+	log.Printf("  今日日常完成 %d/%d｜本周剿灭完成 %d%s｜队列待跑 %d｜失败 %d%s", doneD, total, doneA, piSummary, queued, failed,
 		func() string {
 			if len(pend) > 0 {
 				n := len(pend)
