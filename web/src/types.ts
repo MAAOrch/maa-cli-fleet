@@ -191,6 +191,17 @@ export interface Health {
   prtsBase: string
 }
 
+export interface NavPack {
+  id: string
+  name: string
+  phase: string
+  taskName: string
+  entry: string
+  nodes: string[]
+  images: number
+  createdAt: string
+}
+
 export interface AccountsResponse {
   accounts: Account[]
   maaReady: boolean

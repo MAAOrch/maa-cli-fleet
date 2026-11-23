@@ -130,6 +130,9 @@ type RunOptions struct {
 	// 同阶段内走 OnMap 连续多关（由 MAA 自己找关），仅在切换阶段时调用一次 PI 进页导航。
 	PhaseNav  bool   `json:"phaseNav,omitempty"`
 	PiProject string `json:"piProject,omitempty"` // 阶段导航使用的 PI 项目名（默认 arknights-event）
+	// PhaseNavTasks 按阶段覆盖页面级 PI 导航任务名（如 {"main":"导入:新活动普通图","ex":"导入:新活动EX"}）；
+	// 未指定的阶段回退到默认「进入普通图 / 进入EX图 / 进入S图」。
+	PhaseNavTasks map[string]string `json:"phaseNavTasks,omitempty"`
 	MaxAttempts        int    `json:"maxAttempts"`
 	SupportUnitUsage   int    `json:"supportUnitUsage"` // 0 不用助战
 	TimeoutMin         int    `json:"timeoutMin"`

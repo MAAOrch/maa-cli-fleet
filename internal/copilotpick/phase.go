@@ -137,9 +137,23 @@ func (c Config) resolvePiExe(project string) string {
 	return ""
 }
 
+// phaseNavTaskFor 返回本次运行在指定阶段应执行的 PI 导航任务名（优先使用用户绑定的导入导航）。
+func (r *Run) phaseNavTaskFor(phase string) string {
+	p := NormalizePhase(phase)
+	if r.opts.PhaseNavTasks != nil {
+		if custom := strings.TrimSpace(r.opts.PhaseNavTasks[p]); custom != "" {
+			return custom
+		}
+		if custom := strings.TrimSpace(r.opts.PhaseNavTasks[phase]); custom != "" {
+			return custom
+		}
+	}
+	return PhaseNavTask(p)
+}
+
 // navigatePhase 在切换活动地图页时执行一次页面级 PI 导航。
 func (r *Run) navigatePhase(ctx context.Context, phase string) error {
-	task := PhaseNavTask(phase)
+	task := r.phaseNavTaskFor(phase)
 	if task == "" {
 		return fmt.Errorf("未知阶段 %q，无对应页面导航任务", phase)
 	}

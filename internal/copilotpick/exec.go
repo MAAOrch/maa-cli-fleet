@@ -133,7 +133,7 @@ func (r *Run) run() {
 			if phase != currentPhase {
 				r.setPhase(phase)
 				r.setStatus("navigating")
-				r.event("stage", "status", fmt.Sprintf("进入%s：执行页面级导航（%s）", PhaseLabel(phase), PhaseNavTask(phase)))
+				r.event("stage", "status", fmt.Sprintf("进入%s：执行页面级导航（%s）", PhaseLabel(phase), r.phaseNavTaskFor(phase)))
 				if err := r.navigatePhase(ctx, phase); err != nil {
 					if r.isStopped() {
 						r.finish("stopped", "")

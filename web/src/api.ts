@@ -4,6 +4,7 @@ import type {
   Health,
   JobSearch,
   JobSearchRequest,
+  NavPack,
   Roster,
   RunEvent,
   RunOptions,
@@ -198,6 +199,7 @@ export const api = {
     accountId: string
     stageCodes: string[]
     phases?: string[]
+    phaseNavTasks?: Record<string, string>
     autoScanBox?: boolean
     includeCleared?: boolean
     useSupport?: boolean
@@ -214,6 +216,26 @@ export const api = {
       rosterSize: number
       skipped?: string[]
     }>('/api/auto-event/start', body),
+
+  /** 列出已导入的可视化导航包（MPE / MAA 导出的 .json 或 .zip）。 */
+  navPacks: () => request<{ packs: NavPack[] }>('/api/nav/packs'),
+
+  /** 导入 MAA 可视化编辑器 / MPE 导出的导航文件。 */
+  importNavPack: async (file: File, name: string, phase: string): Promise<{ ok: boolean; pack: NavPack }> => {
+    const fd = new FormData()
+    fd.append('file', file)
+    if (name.trim()) fd.append('name', name.trim())
+    if (phase) fd.append('phase', phase)
+    return request<{ ok: boolean; pack: NavPack }>('/api/nav/import', {
+      method: 'POST',
+      body: fd,
+    })
+  },
+
+  deleteNavPack: (id: string) =>
+    request<{ ok: boolean; id: string }>(`/api/nav/packs/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }),
 
   /** 推关台账（哪关/难度/几星），空数组 = 还没打过。 */
   progress: () => request<{ stages: StageProgress[]; count: number }>('/api/progress'),

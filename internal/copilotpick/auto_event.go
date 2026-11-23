@@ -24,8 +24,9 @@ type autoEventRequest struct {
 	IncludeCleared bool     `json:"includeCleared,omitempty"`
 	UseSupport     *bool    `json:"useSupport,omitempty"`
 	MaxAttempts    int      `json:"maxAttempts,omitempty"`
-	TimeoutMin     int      `json:"timeoutMin,omitempty"`
-	PiProject      string   `json:"piProject,omitempty"`
+	TimeoutMin    int               `json:"timeoutMin,omitempty"`
+	PiProject     string            `json:"piProject,omitempty"`
+	PhaseNavTasks map[string]string `json:"phaseNavTasks,omitempty"`
 }
 
 func (h *handler) activeRuns(w http.ResponseWriter, _ *http.Request) {
@@ -101,6 +102,7 @@ func (h *handler) startAutoEvent(w http.ResponseWriter, r *http.Request) {
 		IgnoreRequirements: true,
 		PhaseNav:           true,
 		PiProject:          req.PiProject,
+		PhaseNavTasks:      req.PhaseNavTasks,
 		MaxAttempts:        maxPick,
 		SupportUnitUsage:   supportUsage,
 		TimeoutMin:         req.TimeoutMin,

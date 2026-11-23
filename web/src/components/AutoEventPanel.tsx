@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api, describeError } from '../api'
-import type { Account, RunSnapshot } from '../types'
+import type { Account, NavPack, RunSnapshot } from '../types'
 
 interface AutoEventPanelProps {
   accounts: Account[]
@@ -9,9 +9,9 @@ interface AutoEventPanelProps {
 }
 
 const PHASE_OPTIONS = [
-  { id: 'main', label: '第 1 阶段（普通图）' },
-  { id: 'ex', label: '第 2 阶段（EX 图）' },
-  { id: 's', label: '第 3 阶段（S 图）' },
+  { id: 'main', label: '第 1 阶段（普通图）', defaultTask: '进入普通图' },
+  { id: 'ex', label: '第 2 阶段（EX 图）', defaultTask: '进入EX图' },
+  { id: 's', label: '第 3 阶段（S 图）', defaultTask: '进入S图' },
 ]
 
 function phaseBadge(phase?: string): string {
@@ -34,6 +34,12 @@ export function AutoEventPanel({ accounts, activeRunId, onSelectRun }: AutoEvent
   const [selectedGroup, setSelectedGroup] = useState('')
   const [stagesText, setStagesText] = useState('')
   const [phases, setPhases] = useState<string[]>(['main', 'ex', 's'])
+  const [phaseNavTasks, setPhaseNavTasks] = useState<Record<string, string>>({})
+  const [navPacks, setNavPacks] = useState<NavPack[]>([])
+  const [importName, setImportName] = useState('')
+  const [importPhase, setImportPhase] = useState('main')
+  const [importing, setImporting] = useState(false)
+  const fileRef = useRef<HTMLInputElement | null>(null)
   const [autoScanBox, setAutoScanBox] = useState(true)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
@@ -49,10 +55,11 @@ export function AutoEventPanel({ accounts, activeRunId, onSelectRun }: AutoEvent
   useEffect(() => {
     api
       .stageCatalog()
-      .then((res) => {
-        const list = res.groups ?? []
-        setGroups(list)
-      })
+      .then((res) => setGroups(res.groups ?? []))
+      .catch(() => {})
+    api
+      .navPacks()
+      .then((res) => setNavPacks(res.packs ?? []))
       .catch(() => {})
   }, [])
 
@@ -92,6 +99,39 @@ export function AutoEventPanel({ accounts, activeRunId, onSelectRun }: AutoEvent
     }
   }
 
+  async function handleImportNav() {
+    const file = fileRef.current?.files?.[0]
+    if (!file) {
+      setNotice('请先选择 MAA 可视化编辑器 / MPE 导出的 .json 或 .zip 文件')
+      return
+    }
+    setImporting(true)
+    setNotice('')
+    try {
+      const res = await api.importNavPack(file, importName, importPhase)
+      setNavPacks((prev) => [...prev, res.pack])
+      if (res.pack.phase) {
+        setPhaseNavTasks((prev) => ({ ...prev, [res.pack.phase]: res.pack.taskName }))
+      }
+      setImportName('')
+      if (fileRef.current) fileRef.current.value = ''
+      setNotice(`已导入导航「${res.pack.name}」（入口 ${res.pack.entry}，${res.pack.nodes.length} 节点）并自动绑定到对应阶段`)
+    } catch (err) {
+      setNotice(`导入导航失败：${describeError(err)}`)
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  async function handleDeleteNav(id: string) {
+    try {
+      await api.deleteNavPack(id)
+      setNavPacks((prev) => prev.filter((p) => p.id !== id))
+    } catch (err) {
+      setNotice(describeError(err))
+    }
+  }
+
   async function handleStartAll() {
     const codes = stagesText
       .split(/[\s,，;；]+/)
@@ -111,6 +151,10 @@ export function AutoEventPanel({ accounts, activeRunId, onSelectRun }: AutoEvent
     }
     setBusy(true)
     setNotice('')
+    const customNav: Record<string, string> = {}
+    for (const p of phases) {
+      if (phaseNavTasks[p]) customNav[p] = phaseNavTasks[p]
+    }
     const results: string[] = []
     let firstRunId = ''
     for (const accId of selectedAccounts) {
@@ -119,6 +163,7 @@ export function AutoEventPanel({ accounts, activeRunId, onSelectRun }: AutoEvent
           accountId: accId,
           stageCodes: codes,
           phases,
+          phaseNavTasks: Object.keys(customNav).length > 0 ? customNav : undefined,
           autoScanBox,
           useSupport: true,
         })
@@ -192,7 +237,7 @@ export function AutoEventPanel({ accounts, activeRunId, onSelectRun }: AutoEvent
       )}
 
       {open && (
-        <div className="mt-3 space-y-2 text-xs">
+        <div className="mt-3 space-y-2.5 text-xs">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">模拟器/账号：</span>
             {accounts.map((a) => (
@@ -208,20 +253,6 @@ export function AutoEventPanel({ accounts, activeRunId, onSelectRun }: AutoEvent
                 </span>
               </label>
             ))}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium">阶段分流：</span>
-            {PHASE_OPTIONS.map((p) => (
-              <label key={p.id} className="inline-flex items-center gap-1 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={phases.includes(p.id)}
-                  onChange={() => togglePhase(p.id)}
-                />
-                <span>{p.label}</span>
-              </label>
-            ))}
             <label className="inline-flex items-center gap-1 ml-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -232,7 +263,89 @@ export function AutoEventPanel({ accounts, activeRunId, onSelectRun }: AutoEvent
             </label>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="space-y-1.5 border-t pt-2">
+            <div className="font-medium">各阶段开关与对应导航（进入该页 → 自动执行该阶段作业集）：</div>
+            <div className="flex flex-wrap gap-3">
+              {PHASE_OPTIONS.map((p) => (
+                <div key={p.id} className="inline-flex items-center gap-1.5">
+                  <label className="inline-flex items-center gap-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={phases.includes(p.id)}
+                      onChange={() => togglePhase(p.id)}
+                    />
+                    <span>{p.label}</span>
+                  </label>
+                  <select
+                    className="border rounded px-1.5 py-0.5 bg-white"
+                    value={phaseNavTasks[p.id] ?? ''}
+                    onChange={(e) =>
+                      setPhaseNavTasks((prev) => ({ ...prev, [p.id]: e.target.value }))
+                    }
+                  >
+                    <option value="">默认（{p.defaultTask}）</option>
+                    {navPacks.map((np) => (
+                      <option key={np.id} value={np.taskName}>
+                        {np.name}（{np.entry}）
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 border-t pt-2">
+            <span className="font-medium">导入可视化导航（MAA/MPE 导出）：</span>
+            <input ref={fileRef} type="file" accept=".json,.zip" className="text-xs" />
+            <input
+              className="border rounded px-1.5 py-0.5 bg-white"
+              placeholder="名称（如 新活动1阶段）"
+              value={importName}
+              onChange={(e) => setImportName(e.target.value)}
+              size={14}
+            />
+            <select
+              className="border rounded px-1.5 py-0.5 bg-white"
+              value={importPhase}
+              onChange={(e) => setImportPhase(e.target.value)}
+            >
+              <option value="main">绑定到第 1 阶段</option>
+              <option value="ex">绑定到第 2 阶段</option>
+              <option value="s">绑定到第 3 阶段</option>
+            </select>
+            <button
+              type="button"
+              className="border rounded px-2 py-0.5 bg-white hover:bg-blue-50 disabled:opacity-50"
+              disabled={importing}
+              onClick={() => void handleImportNav()}
+            >
+              {importing ? '导入中…' : '导入导航文件'}
+            </button>
+            {navPacks.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 w-full mt-1">
+                {navPacks.map((np) => (
+                  <span
+                    key={np.id}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded border bg-white"
+                  >
+                    <span>
+                      {np.name} ({np.nodes.length}节点{np.images > 0 ? `/${np.images}图` : ''})
+                    </span>
+                    <button
+                      type="button"
+                      className="text-red-500 hover:underline"
+                      onClick={() => void handleDeleteNav(np.id)}
+                    >
+                      删
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 border-t pt-2">
             <span className="font-medium">活动分组：</span>
             <select
               className="border rounded px-1.5 py-0.5 bg-white"

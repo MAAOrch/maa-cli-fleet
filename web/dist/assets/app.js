@@ -20113,6 +20113,24 @@ const api = {
     startRun: (options) => post('/api/run/start', options),
     /** 一键全自动推活动：自动扫箱 + 挑作业 + 按阶段（普通/EX/S）分流启动。 */
     startAutoEvent: (body) => post('/api/auto-event/start', body),
+    /** 列出已导入的可视化导航包（MPE / MAA 导出的 .json 或 .zip）。 */
+    navPacks: () => request('/api/nav/packs'),
+    /** 导入 MAA 可视化编辑器 / MPE 导出的导航文件。 */
+    importNavPack: async (file, name, phase) => {
+        const fd = new FormData();
+        fd.append('file', file);
+        if (name.trim())
+            fd.append('name', name.trim());
+        if (phase)
+            fd.append('phase', phase);
+        return request('/api/nav/import', {
+            method: 'POST',
+            body: fd,
+        });
+    },
+    deleteNavPack: (id) => request(`/api/nav/packs/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+    }),
     /** 推关台账（哪关/难度/几星），空数组 = 还没打过。 */
     progress: () => request('/api/progress'),
     activeRun: () => request('/api/run/active'),
@@ -20454,9 +20472,9 @@ function PiProjectsPanel({ accounts = [], selectedAccountId = '' }) {
 }
 
 const PHASE_OPTIONS = [
-    { id: 'main', label: '第 1 阶段（普通图）' },
-    { id: 'ex', label: '第 2 阶段（EX 图）' },
-    { id: 's', label: '第 3 阶段（S 图）' },
+    { id: 'main', label: '第 1 阶段（普通图）', defaultTask: '进入普通图' },
+    { id: 'ex', label: '第 2 阶段（EX 图）', defaultTask: '进入EX图' },
+    { id: 's', label: '第 3 阶段（S 图）', defaultTask: '进入S图' },
 ];
 function phaseBadge(phase) {
     switch (phase) {
@@ -20477,6 +20495,12 @@ function AutoEventPanel({ accounts, activeRunId, onSelectRun }) {
     const [selectedGroup, setSelectedGroup] = reactExports.useState('');
     const [stagesText, setStagesText] = reactExports.useState('');
     const [phases, setPhases] = reactExports.useState(['main', 'ex', 's']);
+    const [phaseNavTasks, setPhaseNavTasks] = reactExports.useState({});
+    const [navPacks, setNavPacks] = reactExports.useState([]);
+    const [importName, setImportName] = reactExports.useState('');
+    const [importPhase, setImportPhase] = reactExports.useState('main');
+    const [importing, setImporting] = reactExports.useState(false);
+    const fileRef = reactExports.useRef(null);
     const [autoScanBox, setAutoScanBox] = reactExports.useState(true);
     const [busy, setBusy] = reactExports.useState(false);
     const [notice, setNotice] = reactExports.useState('');
@@ -20490,10 +20514,11 @@ function AutoEventPanel({ accounts, activeRunId, onSelectRun }) {
     reactExports.useEffect(() => {
         api
             .stageCatalog()
-            .then((res) => {
-            const list = res.groups ?? [];
-            setGroups(list);
-        })
+            .then((res) => setGroups(res.groups ?? []))
+            .catch(() => { });
+        api
+            .navPacks()
+            .then((res) => setNavPacks(res.packs ?? []))
             .catch(() => { });
     }, []);
     reactExports.useEffect(() => {
@@ -20527,6 +20552,41 @@ function AutoEventPanel({ accounts, activeRunId, onSelectRun }) {
             setStagesText(found.stages.join(', '));
         }
     }
+    async function handleImportNav() {
+        const file = fileRef.current?.files?.[0];
+        if (!file) {
+            setNotice('请先选择 MAA 可视化编辑器 / MPE 导出的 .json 或 .zip 文件');
+            return;
+        }
+        setImporting(true);
+        setNotice('');
+        try {
+            const res = await api.importNavPack(file, importName, importPhase);
+            setNavPacks((prev) => [...prev, res.pack]);
+            if (res.pack.phase) {
+                setPhaseNavTasks((prev) => ({ ...prev, [res.pack.phase]: res.pack.taskName }));
+            }
+            setImportName('');
+            if (fileRef.current)
+                fileRef.current.value = '';
+            setNotice(`已导入导航「${res.pack.name}」（入口 ${res.pack.entry}，${res.pack.nodes.length} 节点）并自动绑定到对应阶段`);
+        }
+        catch (err) {
+            setNotice(`导入导航失败：${describeError(err)}`);
+        }
+        finally {
+            setImporting(false);
+        }
+    }
+    async function handleDeleteNav(id) {
+        try {
+            await api.deleteNavPack(id);
+            setNavPacks((prev) => prev.filter((p) => p.id !== id));
+        }
+        catch (err) {
+            setNotice(describeError(err));
+        }
+    }
     async function handleStartAll() {
         const codes = stagesText
             .split(/[\s,，;；]+/)
@@ -20546,6 +20606,11 @@ function AutoEventPanel({ accounts, activeRunId, onSelectRun }) {
         }
         setBusy(true);
         setNotice('');
+        const customNav = {};
+        for (const p of phases) {
+            if (phaseNavTasks[p])
+                customNav[p] = phaseNavTasks[p];
+        }
         const results = [];
         let firstRunId = '';
         for (const accId of selectedAccounts) {
@@ -20554,6 +20619,7 @@ function AutoEventPanel({ accounts, activeRunId, onSelectRun }) {
                     accountId: accId,
                     stageCodes: codes,
                     phases,
+                    phaseNavTasks: Object.keys(customNav).length > 0 ? customNav : undefined,
                     autoScanBox,
                     useSupport: true,
                 });
@@ -20578,7 +20644,7 @@ function AutoEventPanel({ accounts, activeRunId, onSelectRun }) {
             // ignore
         }
     }
-    return (jsxRuntimeExports.jsxs("div", { className: "border rounded p-3 mb-3 bg-gray-50", children: [jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between gap-2", children: [jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [jsxRuntimeExports.jsx("strong", { className: "text-sm", children: "\u4E00\u952E\u5168\u81EA\u52A8\u63A8\u6D3B\u52A8\uFF08\u6309\u9636\u6BB5\u5206\u6D41 \u00B7 \u652F\u6301\u591A\u6A21\u62DF\u5668\u5E76\u53D1\uFF09" }), running.length > 0 && (jsxRuntimeExports.jsxs("span", { className: "text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-800", children: ["\u8FD0\u884C\u4E2D ", running.length, " \u53F0"] }))] }), jsxRuntimeExports.jsx("button", { type: "button", className: "text-xs border rounded px-2 py-0.5 hover:bg-white", onClick: () => setOpen((v) => !v), children: open ? '收起' : '展开配置' })] }), running.length > 0 && (jsxRuntimeExports.jsx("div", { className: "flex flex-wrap gap-2 mt-2", children: running.map((r) => (jsxRuntimeExports.jsxs("div", { className: `flex items-center gap-2 text-xs border rounded px-2 py-1 bg-white ${activeRunId === r.id ? 'border-blue-500' : ''}`, children: [jsxRuntimeExports.jsxs("button", { type: "button", className: "font-mono hover:underline", onClick: () => onSelectRun(r.id), children: [r.accountName || r.accountId, r.phase ? ` · ${phaseBadge(r.phase)}` : '', ` · ${r.stageIndex ?? 1}/${r.stageTotal ?? 1} ${r.stageCode}`] }), jsxRuntimeExports.jsx("button", { type: "button", className: "text-red-600 hover:underline", onClick: () => void handleStop(r.id), children: "\u505C\u6B62" })] }, r.id))) })), open && (jsxRuntimeExports.jsxs("div", { className: "mt-3 space-y-2 text-xs", children: [jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [jsxRuntimeExports.jsx("span", { className: "font-medium", children: "\u6A21\u62DF\u5668/\u8D26\u53F7\uFF1A" }), accounts.map((a) => (jsxRuntimeExports.jsxs("label", { className: "inline-flex items-center gap-1 cursor-pointer", children: [jsxRuntimeExports.jsx("input", { type: "checkbox", checked: selectedAccounts.includes(a.id), onChange: () => toggleAccount(a.id) }), jsxRuntimeExports.jsxs("span", { children: [a.id, a.name ? `(${a.name})` : ''] })] }, a.id)))] }), jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [jsxRuntimeExports.jsx("span", { className: "font-medium", children: "\u9636\u6BB5\u5206\u6D41\uFF1A" }), PHASE_OPTIONS.map((p) => (jsxRuntimeExports.jsxs("label", { className: "inline-flex items-center gap-1 cursor-pointer", children: [jsxRuntimeExports.jsx("input", { type: "checkbox", checked: phases.includes(p.id), onChange: () => togglePhase(p.id) }), jsxRuntimeExports.jsx("span", { children: p.label })] }, p.id))), jsxRuntimeExports.jsxs("label", { className: "inline-flex items-center gap-1 ml-2 cursor-pointer", children: [jsxRuntimeExports.jsx("input", { type: "checkbox", checked: autoScanBox, onChange: (e) => setAutoScanBox(e.target.checked) }), jsxRuntimeExports.jsx("span", { children: "\u542F\u52A8\u524D\u81EA\u52A8\u626B\u63CF\u5E72\u5458" })] })] }), jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [jsxRuntimeExports.jsx("span", { className: "font-medium", children: "\u6D3B\u52A8\u5206\u7EC4\uFF1A" }), jsxRuntimeExports.jsxs("select", { className: "border rounded px-1.5 py-0.5 bg-white", value: selectedGroup, onChange: (e) => applyGroup(e.target.value), children: [jsxRuntimeExports.jsx("option", { value: "", children: "-- \u9009\u62E9\u6D3B\u52A8\u5FEB\u6377\u586B\u5145 --" }), groups.map((g) => (jsxRuntimeExports.jsxs("option", { value: g.name, children: [g.name, "\uFF08", g.stages.length, " \u5173\uFF09"] }, g.name)))] }), jsxRuntimeExports.jsx("input", { className: "border rounded px-2 py-0.5 flex-1 min-w-[220px] bg-white font-mono", placeholder: "\u5173\u5361\u4EE3\u53F7\uFF0C\u9017\u53F7\u5206\u9694\uFF0C\u5982 OS-1, OS-2, OS-EX-1, OS-S-1", value: stagesText, onChange: (e) => setStagesText(e.target.value) }), jsxRuntimeExports.jsx("button", { type: "button", className: "border rounded px-3 py-1 bg-blue-600 text-white disabled:opacity-50", disabled: busy, onClick: () => void handleStartAll(), children: busy ? '正在扫箱与匹配作业…' : '开始全自动推关' })] }), notice && jsxRuntimeExports.jsx("p", { className: "text-gray-700", children: notice })] }))] }));
+    return (jsxRuntimeExports.jsxs("div", { className: "border rounded p-3 mb-3 bg-gray-50", children: [jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between gap-2", children: [jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [jsxRuntimeExports.jsx("strong", { className: "text-sm", children: "\u4E00\u952E\u5168\u81EA\u52A8\u63A8\u6D3B\u52A8\uFF08\u6309\u9636\u6BB5\u5206\u6D41 \u00B7 \u652F\u6301\u591A\u6A21\u62DF\u5668\u5E76\u53D1\uFF09" }), running.length > 0 && (jsxRuntimeExports.jsxs("span", { className: "text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-800", children: ["\u8FD0\u884C\u4E2D ", running.length, " \u53F0"] }))] }), jsxRuntimeExports.jsx("button", { type: "button", className: "text-xs border rounded px-2 py-0.5 hover:bg-white", onClick: () => setOpen((v) => !v), children: open ? '收起' : '展开配置' })] }), running.length > 0 && (jsxRuntimeExports.jsx("div", { className: "flex flex-wrap gap-2 mt-2", children: running.map((r) => (jsxRuntimeExports.jsxs("div", { className: `flex items-center gap-2 text-xs border rounded px-2 py-1 bg-white ${activeRunId === r.id ? 'border-blue-500' : ''}`, children: [jsxRuntimeExports.jsxs("button", { type: "button", className: "font-mono hover:underline", onClick: () => onSelectRun(r.id), children: [r.accountName || r.accountId, r.phase ? ` · ${phaseBadge(r.phase)}` : '', ` · ${r.stageIndex ?? 1}/${r.stageTotal ?? 1} ${r.stageCode}`] }), jsxRuntimeExports.jsx("button", { type: "button", className: "text-red-600 hover:underline", onClick: () => void handleStop(r.id), children: "\u505C\u6B62" })] }, r.id))) })), open && (jsxRuntimeExports.jsxs("div", { className: "mt-3 space-y-2.5 text-xs", children: [jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [jsxRuntimeExports.jsx("span", { className: "font-medium", children: "\u6A21\u62DF\u5668/\u8D26\u53F7\uFF1A" }), accounts.map((a) => (jsxRuntimeExports.jsxs("label", { className: "inline-flex items-center gap-1 cursor-pointer", children: [jsxRuntimeExports.jsx("input", { type: "checkbox", checked: selectedAccounts.includes(a.id), onChange: () => toggleAccount(a.id) }), jsxRuntimeExports.jsxs("span", { children: [a.id, a.name ? `(${a.name})` : ''] })] }, a.id))), jsxRuntimeExports.jsxs("label", { className: "inline-flex items-center gap-1 ml-2 cursor-pointer", children: [jsxRuntimeExports.jsx("input", { type: "checkbox", checked: autoScanBox, onChange: (e) => setAutoScanBox(e.target.checked) }), jsxRuntimeExports.jsx("span", { children: "\u542F\u52A8\u524D\u81EA\u52A8\u626B\u63CF\u5E72\u5458" })] })] }), jsxRuntimeExports.jsxs("div", { className: "space-y-1.5 border-t pt-2", children: [jsxRuntimeExports.jsx("div", { className: "font-medium", children: "\u5404\u9636\u6BB5\u5F00\u5173\u4E0E\u5BF9\u5E94\u5BFC\u822A\uFF08\u8FDB\u5165\u8BE5\u9875 \u2192 \u81EA\u52A8\u6267\u884C\u8BE5\u9636\u6BB5\u4F5C\u4E1A\u96C6\uFF09\uFF1A" }), jsxRuntimeExports.jsx("div", { className: "flex flex-wrap gap-3", children: PHASE_OPTIONS.map((p) => (jsxRuntimeExports.jsxs("div", { className: "inline-flex items-center gap-1.5", children: [jsxRuntimeExports.jsxs("label", { className: "inline-flex items-center gap-1 cursor-pointer", children: [jsxRuntimeExports.jsx("input", { type: "checkbox", checked: phases.includes(p.id), onChange: () => togglePhase(p.id) }), jsxRuntimeExports.jsx("span", { children: p.label })] }), jsxRuntimeExports.jsxs("select", { className: "border rounded px-1.5 py-0.5 bg-white", value: phaseNavTasks[p.id] ?? '', onChange: (e) => setPhaseNavTasks((prev) => ({ ...prev, [p.id]: e.target.value })), children: [jsxRuntimeExports.jsxs("option", { value: "", children: ["\u9ED8\u8BA4\uFF08", p.defaultTask, "\uFF09"] }), navPacks.map((np) => (jsxRuntimeExports.jsxs("option", { value: np.taskName, children: [np.name, "\uFF08", np.entry, "\uFF09"] }, np.id)))] })] }, p.id))) })] }), jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center gap-2 border-t pt-2", children: [jsxRuntimeExports.jsx("span", { className: "font-medium", children: "\u5BFC\u5165\u53EF\u89C6\u5316\u5BFC\u822A\uFF08MAA/MPE \u5BFC\u51FA\uFF09\uFF1A" }), jsxRuntimeExports.jsx("input", { ref: fileRef, type: "file", accept: ".json,.zip", className: "text-xs" }), jsxRuntimeExports.jsx("input", { className: "border rounded px-1.5 py-0.5 bg-white", placeholder: "\u540D\u79F0\uFF08\u5982 \u65B0\u6D3B\u52A81\u9636\u6BB5\uFF09", value: importName, onChange: (e) => setImportName(e.target.value), size: 14 }), jsxRuntimeExports.jsxs("select", { className: "border rounded px-1.5 py-0.5 bg-white", value: importPhase, onChange: (e) => setImportPhase(e.target.value), children: [jsxRuntimeExports.jsx("option", { value: "main", children: "\u7ED1\u5B9A\u5230\u7B2C 1 \u9636\u6BB5" }), jsxRuntimeExports.jsx("option", { value: "ex", children: "\u7ED1\u5B9A\u5230\u7B2C 2 \u9636\u6BB5" }), jsxRuntimeExports.jsx("option", { value: "s", children: "\u7ED1\u5B9A\u5230\u7B2C 3 \u9636\u6BB5" })] }), jsxRuntimeExports.jsx("button", { type: "button", className: "border rounded px-2 py-0.5 bg-white hover:bg-blue-50 disabled:opacity-50", disabled: importing, onClick: () => void handleImportNav(), children: importing ? '导入中…' : '导入导航文件' }), navPacks.length > 0 && (jsxRuntimeExports.jsx("div", { className: "flex flex-wrap gap-1.5 w-full mt-1", children: navPacks.map((np) => (jsxRuntimeExports.jsxs("span", { className: "inline-flex items-center gap-1 px-2 py-0.5 rounded border bg-white", children: [jsxRuntimeExports.jsxs("span", { children: [np.name, " (", np.nodes.length, "\u8282\u70B9", np.images > 0 ? `/${np.images}图` : '', ")"] }), jsxRuntimeExports.jsx("button", { type: "button", className: "text-red-500 hover:underline", onClick: () => void handleDeleteNav(np.id), children: "\u5220" })] }, np.id))) }))] }), jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center gap-2 border-t pt-2", children: [jsxRuntimeExports.jsx("span", { className: "font-medium", children: "\u6D3B\u52A8\u5206\u7EC4\uFF1A" }), jsxRuntimeExports.jsxs("select", { className: "border rounded px-1.5 py-0.5 bg-white", value: selectedGroup, onChange: (e) => applyGroup(e.target.value), children: [jsxRuntimeExports.jsx("option", { value: "", children: "-- \u9009\u62E9\u6D3B\u52A8\u5FEB\u6377\u586B\u5145 --" }), groups.map((g) => (jsxRuntimeExports.jsxs("option", { value: g.name, children: [g.name, "\uFF08", g.stages.length, " \u5173\uFF09"] }, g.name)))] }), jsxRuntimeExports.jsx("input", { className: "border rounded px-2 py-0.5 flex-1 min-w-[220px] bg-white font-mono", placeholder: "\u5173\u5361\u4EE3\u53F7\uFF0C\u9017\u53F7\u5206\u9694\uFF0C\u5982 OS-1, OS-2, OS-EX-1, OS-S-1", value: stagesText, onChange: (e) => setStagesText(e.target.value) }), jsxRuntimeExports.jsx("button", { type: "button", className: "border rounded px-3 py-1 bg-blue-600 text-white disabled:opacity-50", disabled: busy, onClick: () => void handleStartAll(), children: busy ? '正在扫箱与匹配作业…' : '开始全自动推关' })] }), notice && jsxRuntimeExports.jsx("p", { className: "text-gray-700", children: notice })] }))] }));
 }
 
 // 本地设置（只影响下一次开始执行，存在浏览器里）。
