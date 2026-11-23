@@ -45,6 +45,8 @@ type Config struct {
 	JobScoresFile string `json:"jobScoresFile,omitempty"`
 	// PiDir PI 项目根目录（含 <project>/interface.json；默认 <root>/pi，可用 COPILOT_PI_DIR 覆盖）。
 	PiDir string `json:"piDir,omitempty"`
+	// PiExe MaaPiCli.exe 路径（可选；留空时按 <piDir>/<project>/MaaPiCli.exe 自动查找）。
+	PiExe string `json:"piExe,omitempty"`
 	// QueueInFile fleet runner 监听的 queue.in 路径（默认与 accountsFile 同目录，可用 COPILOT_QUEUE_IN_FILE 覆盖）。
 	QueueInFile string `json:"queueInFile,omitempty"`
 }
@@ -162,6 +164,7 @@ func mergeConfig(dst *Config, src *Config) {
 	set(&dst.CopilotMode, src.CopilotMode)
 	set(&dst.JobScoresFile, src.JobScoresFile)
 	set(&dst.PiDir, src.PiDir)
+	set(&dst.PiExe, src.PiExe)
 	set(&dst.QueueInFile, src.QueueInFile)
 	if src.StartupTimeoutSec > 0 {
 		dst.StartupTimeoutSec = src.StartupTimeoutSec

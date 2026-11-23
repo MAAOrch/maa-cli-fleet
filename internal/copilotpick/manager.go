@@ -322,9 +322,6 @@ func normalizeStagePlans(opts *model.RunOptions) error {
 	if len(stages) > 1 && opts.ManualMode {
 		return errors.New("手动模式只支持单关，不能排队多关")
 	}
-	if len(stages) > 1 && opts.OnMap {
-		return errors.New("活动地图模式只支持单关，不能排队多关")
-	}
 	for i := range stages {
 		stages[i].StageCode = strings.TrimSpace(stages[i].StageCode)
 		stages[i].StageName = strings.TrimSpace(stages[i].StageName)
@@ -348,6 +345,11 @@ func normalizeStagePlans(opts *model.RunOptions) error {
 			}
 		}
 		stages[i].RaidJobIDs = raid
+	}
+	if opts.PhaseNav {
+		// 阶段分流模式：同阶段内走 OnMap 由 MAA 自己找关，仅跨阶段时做页面级 PI 导航。
+		opts.OnMap = true
+		stages = GroupStagesByPhase(stages)
 	}
 	opts.Stages = stages
 	first := stages[0]
@@ -592,6 +594,12 @@ func (r *Run) setStage(index, total int, code, name string) {
 	r.snap.StageTotal = total
 	r.snap.StageCode = code
 	r.snap.StageName = name
+	r.mu.Unlock()
+}
+
+func (r *Run) setPhase(phase string) {
+	r.mu.Lock()
+	r.snap.Phase = phase
 	r.mu.Unlock()
 }
 

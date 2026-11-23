@@ -96,7 +96,10 @@ type JobSearch struct {
 type StagePlan struct {
 	StageCode string `json:"stageCode"` // 导航用显示名，如 TL-9；可为空，MAA 按 Tile code 导航
 	StageName string `json:"stageName"` // 作业站关卡代码，如 act55side_09
-	JobIDs    []int  `json:"jobIds"`    // 按顺序尝试
+	// Phase 所属活动地图页（main=第1阶段普通图 / ex=第2阶段EX图 / s=第3阶段S图）；
+	// 留空时由阶段分流引擎按 StageCode/StageName 自动推断。
+	Phase  string `json:"phase,omitempty"`
+	JobIDs []int  `json:"jobIds"` // 按顺序尝试
 	// RaidJobIDs 是需要按突袭执行的作业（作业站 difficulty=2 突袭 / 3 磨难）。
 	// 执行器对这几份作业在 copilot_list 里写 is_raid=true。
 	RaidJobIDs []int `json:"raidJobIds,omitempty"`
@@ -122,7 +125,11 @@ type RunOptions struct {
 	// OnMap 表示「游戏已被外部工具停在活动地图上」：执行器不 startup、不做章节导航，
 	// 直接走作业集入口，让 MaaCore 的 find_stage 在当前屏幕 OCR 找关卡并点进去。
 	// 活动图不在 MAA 主章节列表里，从主界面起导航必然在章节列表里滑屏死循环。
-	OnMap              bool   `json:"onMap"`
+	OnMap bool `json:"onMap"`
+	// PhaseNav 阶段分流模式：自动把 Stages 按活动地图页分组（main → ex → s），
+	// 同阶段内走 OnMap 连续多关（由 MAA 自己找关），仅在切换阶段时调用一次 PI 进页导航。
+	PhaseNav  bool   `json:"phaseNav,omitempty"`
+	PiProject string `json:"piProject,omitempty"` // 阶段导航使用的 PI 项目名（默认 arknights-event）
 	MaxAttempts        int    `json:"maxAttempts"`
 	SupportUnitUsage   int    `json:"supportUnitUsage"` // 0 不用助战
 	TimeoutMin         int    `json:"timeoutMin"`
@@ -153,6 +160,7 @@ type RunSnapshot struct {
 	Client          string     `json:"client"`
 	StageCode       string     `json:"stageCode"`
 	StageName       string     `json:"stageName"`
+	Phase           string     `json:"phase,omitempty"`      // 当前阶段：main | ex | s
 	StageIndex      int        `json:"stageIndex,omitempty"` // 当前是队列里的第几关（1 起）
 	StageTotal      int        `json:"stageTotal,omitempty"` // 队列总关数（1 = 单关）
 	Attempt         int        `json:"attempt"`

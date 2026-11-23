@@ -108,6 +108,8 @@ func (r *Run) run() {
 	}
 
 	var failed []string
+	currentPhase := ""
+	failedPhases := map[string]string{}
 	for si := range stages {
 		st := stages[si]
 		if r.isStopped() {
@@ -118,6 +120,33 @@ func (r *Run) run() {
 		if msg := r.infraError(); msg != "" {
 			r.finish("failed", "运行环境异常："+msg+"；已中止本次执行，先修模拟器/adb 再重跑")
 			return
+		}
+		if r.opts.PhaseNav {
+			phase := NormalizePhase(st.Phase)
+			if phase == "" {
+				phase = InferStagePhase(st.StageCode, st.StageName)
+			}
+			if reason, bad := failedPhases[phase]; bad {
+				failed = append(failed, fmt.Sprintf("%s（跳过：%s 导航失败：%s）", st.StageCode, PhaseLabel(phase), reason))
+				continue
+			}
+			if phase != currentPhase {
+				r.setPhase(phase)
+				r.setStatus("navigating")
+				r.event("stage", "status", fmt.Sprintf("进入%s：执行页面级导航（%s）", PhaseLabel(phase), PhaseNavTask(phase)))
+				if err := r.navigatePhase(ctx, phase); err != nil {
+					if r.isStopped() {
+						r.finish("stopped", "")
+						return
+					}
+					failedPhases[phase] = err.Error()
+					r.event("error", "stage", fmt.Sprintf("%s页面导航失败（跳过本阶段其余关卡）：%s", PhaseLabel(phase), err.Error()))
+					failed = append(failed, fmt.Sprintf("%s（%s 导航失败：%s）", st.StageCode, PhaseLabel(phase), err.Error()))
+					continue
+				}
+				currentPhase = phase
+				r.event("info", "stage", fmt.Sprintf("%s已到位，同页内由 MAA 多作业自动寻关连续执行", PhaseLabel(phase)))
+			}
 		}
 		r.setStage(si+1, len(stages), st.StageCode, st.StageName)
 		r.event("stage", "status", fmt.Sprintf("第 %d/%d 关：%s", si+1, len(stages), st.StageCode))
