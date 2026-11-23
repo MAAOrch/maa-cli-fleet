@@ -176,20 +176,28 @@ func Run(autoMasDir, root string, ourIDs []string, dryRun bool) error {
 	profDir := filepath.Join(root, "config", "profiles")
 	runnerDir := filepath.Join(root, "runner")
 	for _, d := range []string{tasksDir, profDir, runnerDir} {
-		_ = os.MkdirAll(d, 0o755)
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			return fmt.Errorf("创建目录 %s 失败：%w", d, err)
+		}
 	}
 	for _, a := range accounts {
 		body := fmt.Sprintf("# %s · %s · %s · 刷 %s（由 fleet gen 从 AUTO-MAS 配置生成）\n", a.ID, a.Name, a.Client, a.Stage) +
 			dailyToml(a.Client, a.Stage, masks[a.ID])
-		_ = os.WriteFile(filepath.Join(tasksDir, "daily_"+a.ID+".toml"), []byte(body), 0o644)
+		dailyPath := filepath.Join(tasksDir, "daily_"+a.ID+".toml")
+		if err := os.WriteFile(dailyPath, []byte(body), 0o644); err != nil {
+			return fmt.Errorf("写 %s 失败：%w", dailyPath, err)
+		}
 		if a.AnnTask != "" {
 			// ① stage 必须用 MaaCore 认识的任务名（中文名 / 裸关卡 id 都会被拒）；
-			// ② 必须有"开始唤醒"：蒿灭跑的时候通常是冷启（模拟器刚起、游戏没开），
+			// ② 必须有"开始唤醒"：剿灭跑的时候通常是冷启（模拟器刚起、游戏没开），
 			//    只给 Fight 的话 MAA 找不到任何作战入口，重试 5 次后 Fight Error。
 			ab := fmt.Sprintf("# %s · %s · 剿灭作战 %s\n", a.ID, a.Name, a.Ann) +
 				startUpBlock(a.Client, masks[a.ID]) +
 				fmt.Sprintf("[[tasks]]\nname = \"剿灭作战\"\ntype = \"Fight\"\nparams = { stage = \"%s\", medicine = 0, stone = 0, series = 0 }\n", annStageID(a.Ann))
-			_ = os.WriteFile(filepath.Join(tasksDir, "ann_"+a.ID+".toml"), []byte(ab), 0o644)
+			annPath := filepath.Join(tasksDir, "ann_"+a.ID+".toml")
+			if err := os.WriteFile(annPath, []byte(ab), 0o644); err != nil {
+				return fmt.Errorf("写 %s 失败：%w", annPath, err)
+			}
 		}
 	}
 	for cl := range byClient {
@@ -197,11 +205,24 @@ func Run(autoMasDir, root string, ourIDs []string, dryRun bool) error {
 		if _, err := os.Stat(p); err == nil {
 			continue
 		}
-		_ = os.WriteFile(p, []byte(profileToml(cl)), 0o644)
+		if err := os.WriteFile(p, []byte(profileToml(cl)), 0o644); err != nil {
+			return fmt.Errorf("写 profile %s 失败：%w", p, err)
+		}
 	}
 	af := model.AccountsFile{GeneratedAt: nowISO(), Slots: 8, Accounts: accounts}
-	b, _ := json.MarshalIndent(af, "", "  ")
-	_ = os.WriteFile(filepath.Join(runnerDir, "accounts.json"), b, 0o644)
+	b, err := json.MarshalIndent(af, "", "  ")
+	if err != nil {
+		return fmt.Errorf("序列化 accounts.json 失败：%w", err)
+	}
+	accPath := filepath.Join(runnerDir, "accounts.json")
+	tmpPath := accPath + ".tmp"
+	if err := os.WriteFile(tmpPath, append(b, '\n'), 0o644); err != nil {
+		return fmt.Errorf("写 %s 失败：%w", tmpPath, err)
+	}
+	if err := os.Rename(tmpPath, accPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("更新 %s 失败：%w", accPath, err)
+	}
 	fmt.Printf("已写：%d 份日常 + %d 份剿灭 + profile %d 份 + accounts.json\n", len(accounts), annN, len(byClient))
 	return nil
 }

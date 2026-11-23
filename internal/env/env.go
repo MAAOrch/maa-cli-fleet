@@ -10,6 +10,7 @@
 package env
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -34,32 +35,34 @@ type Spec struct {
 
 var reKV = regexp.MustCompile(`"([^"]+)":\s*"([^"]*)"`)
 
-func run(timeout time.Duration, name string, args ...string) string {
-	cmd := exec.Command(name, args...)
-	done := make(chan struct{})
-	var out []byte
-	go func() { out, _ = cmd.CombinedOutput(); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(timeout):
-		_ = cmd.Process.Kill()
-	}
+// runFunc 便于单元测试替换外部 MuMuManager 调用。
+var runFunc = defaultRun
+
+func defaultRun(timeout time.Duration, name string, args ...string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	out, _ := exec.CommandContext(ctx, name, args...).CombinedOutput()
 	return string(out)
+}
+
+func run(timeout time.Duration, name string, args ...string) string {
+	return runFunc(timeout, name, args...)
+}
+
+func parseKV(raw string) map[string]string {
+	kv := map[string]string{}
+	for _, m := range reKV.FindAllStringSubmatch(raw, -1) {
+		kv[m[1]] = m[2]
+	}
+	return kv
 }
 
 // Show 打印某实例的全部可写设置。
 func Show(c Cfg, emu string) error {
 	raw := run(60*time.Second, c.MuMuManager, "setting", "-v", emu, "--all_writable")
-	kv := map[string]string{}
-	for _, m := range reKV.FindAllStringSubmatch(raw, -1) {
-		kv[m[1]] = m[2]
-	}
+	kv := parseKV(raw)
 	if len(kv) == 0 {
 		return fmt.Errorf("没读到实例 %s 的设置", emu)
-	}
-	keys := make([]string, 0, len(kv))
-	for k := range kv {
-		keys = append(keys, k)
 	}
 	// 只打印关心的几类
 	interesting := []string{"performance_mem.custom", "performance_cpu.custom", "performance_mode",
@@ -77,7 +80,7 @@ func Show(c Cfg, emu string) error {
 // SetOne 改单个键（单台）。返回旧值，方便回滚。
 func SetOne(c Cfg, emu, key, value string) (string, error) {
 	old := getOne(c, emu, key)
-	if out := run(60*time.Second, c.MuMuManager, "setting", "-v", emu, "--key", key, "--value", value); strings.Contains(out, "error") {
+	if out := run(60*time.Second, c.MuMuManager, "setting", "-v", emu, "--key", key, "--value", value); strings.Contains(strings.ToLower(out), "error") {
 		return old, fmt.Errorf("设置失败：%s", strings.TrimSpace(out))
 	}
 	now := getOne(c, emu, key)
@@ -90,9 +93,14 @@ func SetOne(c Cfg, emu, key, value string) (string, error) {
 
 func getOne(c Cfg, emu, key string) string {
 	raw := run(60*time.Second, c.MuMuManager, "setting", "-v", emu, "--key", key, "--all_writable")
-	m := reKV.FindStringSubmatch(raw)
-	if len(m) == 3 {
-		return m[2]
+	kv := parseKV(raw)
+	if v, ok := kv[key]; ok {
+		return v
+	}
+	if len(kv) == 1 {
+		for _, v := range kv {
+			return v
+		}
 	}
 	return ""
 }
