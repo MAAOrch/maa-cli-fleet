@@ -43,6 +43,10 @@ type Config struct {
 	CopilotMode string `json:"copilotMode"`
 	// JobScoresFile 跨号共享作业评分库路径（默认 <root>/job_scores.json，也可用环境变量 COPILOT_JOB_SCORES_FILE 覆盖）。
 	JobScoresFile string `json:"jobScoresFile,omitempty"`
+	// PiDir PI 项目根目录（含 <project>/interface.json；默认 <root>/pi，可用 COPILOT_PI_DIR 覆盖）。
+	PiDir string `json:"piDir,omitempty"`
+	// QueueInFile fleet runner 监听的 queue.in 路径（默认与 accountsFile 同目录，可用 COPILOT_QUEUE_IN_FILE 覆盖）。
+	QueueInFile string `json:"queueInFile,omitempty"`
 }
 
 // DefaultConfig 返回按 root 推导的默认配置。
@@ -157,6 +161,8 @@ func mergeConfig(dst *Config, src *Config) {
 	set(&dst.NavMode, src.NavMode)
 	set(&dst.CopilotMode, src.CopilotMode)
 	set(&dst.JobScoresFile, src.JobScoresFile)
+	set(&dst.PiDir, src.PiDir)
+	set(&dst.QueueInFile, src.QueueInFile)
 	if src.StartupTimeoutSec > 0 {
 		dst.StartupTimeoutSec = src.StartupTimeoutSec
 	}
@@ -227,6 +233,42 @@ func (c Config) JobScoresPath() string {
 		return p
 	}
 	return filepath.Join(c.Root, "job_scores.json")
+}
+
+// PiDirPath 返回 PI 项目扫描目录。
+// 优先级：环境变量 COPILOT_PI_DIR > 配置 piDir > <root>/pi（若存在）> "pi"。
+func (c Config) PiDirPath() string {
+	if p := strings.TrimSpace(os.Getenv("COPILOT_PI_DIR")); p != "" {
+		return p
+	}
+	if p := strings.TrimSpace(c.PiDir); p != "" {
+		return p
+	}
+	if c.Root != "" {
+		cand := filepath.Join(c.Root, "pi")
+		if st, err := os.Stat(cand); err == nil && st.IsDir() {
+			return cand
+		}
+	}
+	return "pi"
+}
+
+// QueueInPath 返回 fleet runner 监听的 queue.in 路径。
+// 优先级：环境变量 COPILOT_QUEUE_IN_FILE > 配置 queueInFile > <accountsFile 同目录>/queue.in > <root>/runner/queue.in > "queue.in"。
+func (c Config) QueueInPath() string {
+	if p := strings.TrimSpace(os.Getenv("COPILOT_QUEUE_IN_FILE")); p != "" {
+		return p
+	}
+	if p := strings.TrimSpace(c.QueueInFile); p != "" {
+		return p
+	}
+	if p := strings.TrimSpace(c.AccountsFile); p != "" {
+		return filepath.Join(filepath.Dir(p), "queue.in")
+	}
+	if c.Root != "" {
+		return filepath.Join(c.Root, "runner", "queue.in")
+	}
+	return "queue.in"
 }
 
 // OSName 便于日志输出。

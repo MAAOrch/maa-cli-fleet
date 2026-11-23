@@ -595,26 +595,30 @@ func (h *handler) navRestart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) piProjects(w http.ResponseWriter, r *http.Request) {
-	// 简单返回可用 PI 项目（读工作区 pi/ 目录）
 	type proj struct {
-		Name    string   `json:"name"`
-		Entries []string `json:"entries"`
+		Name     string   `json:"name"`
+		Resource string   `json:"resource,omitempty"`
+		Entries  []string `json:"entries"`
 	}
-	var out []proj
-	entries, err := os.ReadDir("pi")
+	piDir := h.m.cfg.PiDirPath()
+	out := make([]proj, 0)
+	entries, err := os.ReadDir(piDir)
 	if err != nil {
-		writeJSON(w, http.StatusOK, []proj{})
+		writeJSON(w, http.StatusOK, out)
 		return
 	}
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
-		b, err := os.ReadFile(filepath.Join("pi", e.Name(), "interface.json"))
+		b, err := os.ReadFile(filepath.Join(piDir, e.Name(), "interface.json"))
 		if err != nil {
 			continue
 		}
 		var iface struct {
+			Resource []struct {
+				Name string `json:"name"`
+			} `json:"resource"`
 			Task []struct {
 				Name string `json:"name"`
 			} `json:"task"`
@@ -622,13 +626,17 @@ func (h *handler) piProjects(w http.ResponseWriter, r *http.Request) {
 		if json.Unmarshal(b, &iface) != nil {
 			continue
 		}
-		var tasks []string
+		res := ""
+		if len(iface.Resource) > 0 {
+			res = iface.Resource[0].Name
+		}
+		tasks := make([]string, 0, len(iface.Task))
 		for _, t := range iface.Task {
 			if t.Name != "" {
 				tasks = append(tasks, t.Name)
 			}
 		}
-		out = append(out, proj{Name: e.Name(), Entries: tasks})
+		out = append(out, proj{Name: e.Name(), Resource: res, Entries: tasks})
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -639,24 +647,47 @@ func (h *handler) piEnqueue(w http.ResponseWriter, r *http.Request) {
 		Entry   string `json:"entry"`
 		Account string `json:"account"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Project == "" || req.Entry == "" || req.Account == "" {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid json payload"})
+		return
+	}
+	req.Project = strings.TrimSpace(req.Project)
+	req.Entry = strings.TrimSpace(req.Entry)
+	req.Account = strings.TrimSpace(req.Account)
+	if req.Project == "" || req.Entry == "" || req.Account == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "missing project/entry/account"})
 		return
 	}
-	// 写到工作区根的 queue.in（调用方可按需改为可配置路径）
-	q := "queue.in"
+	if strings.ContainsAny(req.Project, ".:/\\\r\n") || strings.ContainsAny(req.Account, ":\r\n") || strings.ContainsAny(req.Entry, "\r\n") {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid characters in project/entry/account"})
+		return
+	}
+	q := h.m.cfg.QueueInPath()
+	if dir := filepath.Dir(q); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
+	}
+	kind := "pi." + req.Project + "." + req.Entry
+	payload, err := json.Marshal(map[string]string{
+		"op":      "enqueue",
+		"kind":    kind,
+		"account": req.Account,
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
 	f, err := os.OpenFile(q, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
 	defer f.Close()
-	kind := "pi." + req.Project + "." + req.Entry
-	line := fmt.Sprintf(`{"op":"enqueue","kind":%q,"account":%q}
-`, kind, req.Account)
-	if _, err := f.WriteString(line); err != nil {
+	if _, err := f.Write(append(payload, '\n')); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "kind": kind, "account": req.Account})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "kind": kind, "account": req.Account, "queueFile": q})
 }

@@ -1800,7 +1800,6 @@ export function App() {
     <div className="app-shell">
       <div className="bg-grid" aria-hidden="true" />
 
-      <PiProjectsPanel />
       <TopBar
         health={health}
         healthLoading={healthLoading}
@@ -1817,6 +1816,8 @@ export function App() {
         retryLoading={healthLoading || accountsLoading}
         onRetry={() => void reloadService()}
       />
+
+      <PiProjectsPanel accounts={accounts} selectedAccountId={selectedAccountId} />
 
       <main className="app-main">
         <div className="workspace">
