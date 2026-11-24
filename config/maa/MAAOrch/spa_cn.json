@@ -34,20 +34,34 @@
     "postDelay": 2000,
     "next": [
       "MAAOrch@SPA@Theme@SelectDefault",
+      "MAAOrch@SPA@Theme@ScrollTop",
       "MAAOrch@SPA@Theme@ClickOpen"
     ]
   },
   "MAAOrch@SPA@Theme@SelectDefault": {
-    "doc": "在主题列表右侧选择默认主题「卫戍协议终端」",
+    "doc": "在主题列表右侧选择默认主题「卫戍协议终端」（覆盖整列 ROI，找不到时向上滚回列表顶部）",
     "algorithm": "OcrDetect",
     "action": "ClickSelf",
     "text": ["卫戍协议终端"],
-    "roi": [1000, 100, 270, 160],
+    "roi": [980, 90, 290, 520],
     "postDelay": 1500,
     "next": [
       "MAAOrch@SPA@Theme@ApplyBtn",
       "MAAOrch@SPA@Theme@AlreadySet",
       "MAAOrch@SPA@Theme@SelectDefault"
+    ]
+  },
+  "MAAOrch@SPA@Theme@ScrollTop": {
+    "doc": "若右侧主题列表不在顶部，向下滑将列表拉回顶部以露出「卫戍协议终端」",
+    "algorithm": "JustReturn",
+    "action": "Swipe",
+    "begin": [1140, 220, 40, 40],
+    "end": [1140, 540, 40, 40],
+    "duration": 500,
+    "postDelay": 1000,
+    "next": [
+      "MAAOrch@SPA@Theme@SelectDefault",
+      "MAAOrch@SPA@Theme@ScrollTop"
     ]
   },
   "MAAOrch@SPA@Theme@ApplyBtn": {
