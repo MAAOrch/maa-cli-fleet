@@ -1,0 +1,42 @@
+{
+  "name": "promote_200_fast",
+  "mode": "promote",
+  "doc": "专刷「规程跃升奖章」（累计晋级 200 次干员）：全程卡 1~2 本小卡池不升本，高权回购同名低费卡凑三合一晋级，备战席快满时自动出售已晋级精锐卡换钱循环刷。",
+  "economy": {
+    "max_shop_level": 2,
+    "min_round_to_upgrade": 99,
+    "min_hp_to_upgrade": 999,
+    "min_board_units_before_upgrade": 1,
+    "refresh_cost": 2,
+    "min_gold_to_refresh": 3,
+    "max_refreshes_per_round": 12,
+    "sell_bench_when_occupied_ge": 5
+  },
+  "scoring": {
+    "min_buy_score": 15,
+    "tier_weights": {
+      "1": 24,
+      "2": 20,
+      "3": 10,
+      "4": 4,
+      "5": 0,
+      "6": 0
+    },
+    "pair_bonus": 55,
+    "triple_bonus": 150,
+    "target_pact_bonus": 5,
+    "secondary_pact_bonus": 0,
+    "core_operator_bonus": 0,
+    "early_round_low_cost_bonus": 10,
+    "cost_penalty_per_gold": 6
+  },
+  "target_pacts": [],
+  "secondary_pacts": [],
+  "core_operators": [],
+  "blacklist_operators": [],
+  "tiles": {
+    "path": [[872, 233], [883, 297], [995, 439]],
+    "safe": [[802, 297], [810, 365], [894, 365], [907, 439]],
+    "rear": [[795, 233]]
+  }
+}

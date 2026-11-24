@@ -1,0 +1,61 @@
+{
+  "name": "regulation_12_balanced",
+  "mode": "high_diff",
+  "doc": "单人规程等级 12 攻关策略：前期保血不无脑速本，优先叠目标盟约与三合一精锐，血量安全后再稳步升本找 V/VI 阶大核。",
+  "economy": {
+    "max_shop_level": 6,
+    "min_round_to_upgrade": 3,
+    "min_hp_to_upgrade": 40,
+    "min_board_units_before_upgrade": 3,
+    "refresh_cost": 2,
+    "min_gold_to_refresh": 6,
+    "max_refreshes_per_round": 4,
+    "sell_bench_when_occupied_ge": 7
+  },
+  "scoring": {
+    "min_buy_score": 20,
+    "tier_weights": {
+      "1": 6,
+      "2": 12,
+      "3": 20,
+      "4": 30,
+      "5": 48,
+      "6": 68
+    },
+    "pair_bonus": 28,
+    "triple_bonus": 85,
+    "target_pact_bonus": 32,
+    "secondary_pact_bonus": 14,
+    "core_operator_bonus": 55,
+    "early_round_low_cost_bonus": 18,
+    "cost_penalty_per_gold": 3
+  },
+  "target_pacts": [
+    "精确",
+    "谢拉格",
+    "莱塔尼亚",
+    "萨尔贡"
+  ],
+  "secondary_pacts": [
+    "炎",
+    "维多利亚",
+    "拉特兰"
+  ],
+  "core_operators": [
+    "维什戴尔",
+    "逻各斯",
+    "陈",
+    "星熊",
+    "初雪",
+    "蕾缪安",
+    "阿米娅"
+  ],
+  "blacklist_operators": [
+    "望"
+  ],
+  "tiles": {
+    "path": [[872, 233], [883, 297], [995, 439]],
+    "safe": [[802, 297], [810, 365], [894, 365], [907, 439]],
+    "rear": [[795, 233]]
+  }
+}
