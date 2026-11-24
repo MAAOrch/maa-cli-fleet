@@ -250,3 +250,51 @@ export interface JobSearchRequest {
   /** 只返回普通/突袭作业（服务端 filterJobsByMode） */
   mode?: JobMode
 }
+
+export interface SpaBatchAccount {
+  id: string
+  name: string
+  client: string
+  emu: string
+  task?: string
+}
+
+export interface SpaAccountStatus {
+  name: string
+  client: string
+  emu: number
+  status: string
+  retries?: number
+  exit_code?: number
+  started_at?: string
+  last_attempt_at?: string
+  finished_at?: string
+  updated_at?: string
+  log_file?: string
+}
+
+export interface SpaBatchStatusFile {
+  started_at?: string
+  updated_at?: string
+  finished_at?: string
+  params?: {
+    concurrency?: number
+    mode?: string
+    target?: number
+    runs?: number
+    attempts?: number
+    max_retries?: number
+    stall_minutes?: number
+  }
+  accounts?: Record<string, SpaAccountStatus>
+}
+
+export interface SpaStatusResponse {
+  running: boolean
+  pids?: number[]
+  maaV623Ready: boolean
+  runnerReady: boolean
+  configError?: string
+  configAccounts?: SpaBatchAccount[]
+  status?: SpaBatchStatusFile | null
+}

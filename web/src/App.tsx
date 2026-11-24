@@ -36,6 +36,7 @@ import { TopBar } from './components/TopBar'
 import { Icon } from './components/icons'
 import { PiProjectsPanel } from './components/PiProjectsPanel'
 import { AutoEventPanel } from './components/AutoEventPanel'
+import { SpaBadgePanel } from './components/SpaBadgePanel'
 
 // 本地设置（只影响下一次开始执行，存在浏览器里）。
 const SETTINGS_KEY = 'copilot-picker.settings.v1'
@@ -1826,6 +1827,8 @@ export function App() {
           setSnapshot(null)
         }}
       />
+
+      <SpaBadgePanel />
 
       <PiProjectsPanel accounts={accounts} selectedAccountId={selectedAccountId} />
 

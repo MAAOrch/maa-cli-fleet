@@ -9,6 +9,7 @@ import type {
   RunEvent,
   RunOptions,
   RunSnapshot,
+  SpaStatusResponse,
   Stage,
   StageProgress,
 } from './types'
@@ -264,6 +265,35 @@ export const api = {
 
   shotUrl: (runId: string, ts: number) =>
     `/api/run/${encodeURIComponent(runId)}/shot?ts=${ts}`,
+
+  /** 卫戍协议三期「规程」刷角标批量状态。 */
+  spaStatus: () => request<SpaStatusResponse>('/api/spa/status'),
+
+  /** 启动卫戍协议批量刷角标/刷分任务。 */
+  spaStart: (body: {
+    mode: 'badge' | 'score'
+    target: number
+    runs: number
+    attempts: number
+    concurrency: number
+    maxRetries: number
+    stallMinutes: number
+    onlyEmus?: string[]
+    skipEmus?: string[]
+  }) => post<{ ok: boolean; pid: number }>('/api/spa/start', body),
+
+  /** 停止当前卫戍协议批量任务。 */
+  spaStop: () => post<{ ok: boolean; stoppedPids?: number[] }>('/api/spa/stop', {}),
+
+  /** 查看单个模拟器或总调度日志尾巴（emu='main' 为总调度日志）。 */
+  spaLog: async (emu: string): Promise<string> => {
+    const res = await fetch(`/api/spa/log/${encodeURIComponent(emu)}`, { cache: 'no-store' })
+    const raw = await res.text()
+    if (!res.ok) {
+      throw new ApiError(raw || `读取日志失败（HTTP ${res.status}）`, res.status)
+    }
+    return raw
+  },
 
   subscribeRunEvents,
 }
