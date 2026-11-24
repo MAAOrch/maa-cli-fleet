@@ -1,6 +1,6 @@
 {
   "MAAOrch@SPA@EnterCN": {
-    "doc": "国服卫戍协议三期「规程」进场导航：从主界面经终端进入卫戍协议主页，若有旧存档先自动放弃，停在「极速模拟」入口交由 MaaCore v6.23+ 原生 StrongholdProtocol 任务接管",
+    "doc": "国服卫戍协议三期「规程」进场导航：主界面 -> 终端 -> 卫戍协议 -> 放弃旧存档(如有) -> 切到「个人模拟」页签 -> 确认「极速模拟」图标可见后交由 MaaCore v6.23+ 原生 StrongholdProtocol 接管",
     "algorithm": "JustReturn",
     "retry_times": 90,
     "next": [
@@ -8,8 +8,9 @@
       "MAAOrch@SPA@CN@ConfirmGiveUp",
       "MAAOrch@SPA@CN@ReturnHome",
       "MAAOrch@SPA@CN@ArrivedQuickly",
+      "MAAOrch@SPA@CN@ArrivedQuicklyOcr",
       "MAAOrch@SPA@CN@TutorialLocked",
-      "MAAOrch@SPA@CN@ArrivedLobbyOcr",
+      "MAAOrch@SPA@CN@ClickSoloTab",
       "MAAOrch@SPA@CN@ClickTerminalOcr",
       "MAAOrch@SPA@CN@ClickTerminalBannerOcr",
       "MAAOrch@SPA@CN@ClosePopup"
@@ -30,10 +31,18 @@
     ]
   },
   "MAAOrch@SPA@CN@ArrivedQuickly": {
-    "doc": "已到达卫戍协议主页且「极速模拟」图标可见，立即结束导航交给 StrongholdProtocol",
+    "doc": "已切到「个人模拟」且「极速模拟」模板可见，立即结束导航交给 StrongholdProtocol",
     "algorithm": "MatchTemplate",
     "template": "StrongholdProtocol@EnterIndependentQuickly.png",
     "roi": [707, 549, 166, 171],
+    "action": "DoNothing",
+    "next": []
+  },
+  "MAAOrch@SPA@CN@ArrivedQuicklyOcr": {
+    "doc": "OCR 兜底确认「极速模拟」按钮可见，立即结束导航交给 StrongholdProtocol",
+    "algorithm": "OcrDetect",
+    "text": ["极速模拟"],
+    "roi": [680, 540, 260, 180],
     "action": "DoNothing",
     "next": []
   },
@@ -41,17 +50,24 @@
     "doc": "检测到「完成入门协议后解锁」，说明该号未过入门协议，提前停止导航避免死循环",
     "algorithm": "OcrDetect",
     "text": ["完成入门协议后解锁", "入门协议"],
-    "roi": [640, 560, 320, 150],
+    "roi": [640, 560, 340, 150],
     "action": "DoNothing",
     "next": []
   },
-  "MAAOrch@SPA@CN@ArrivedLobbyOcr": {
-    "doc": "OCR 兜底识别已进入卫戍协议：规程主页（极速模拟 / 功勋兑换处 / 个人模拟），停止导航交给 StrongholdProtocol",
+  "MAAOrch@SPA@CN@ClickSoloTab": {
+    "doc": "在卫戍协议：规程主页点击「个人模拟」页签以露出「极速模拟」入口",
     "algorithm": "OcrDetect",
-    "text": ["极速模拟", "功勋兑换处", "个人模拟"],
-    "roi": [0, 420, 1280, 300],
-    "action": "DoNothing",
-    "next": []
+    "action": "ClickSelf",
+    "text": ["个人模拟"],
+    "roi": [880, 500, 190, 110],
+    "postDelay": 1800,
+    "next": [
+      "MAAOrch@SPA@CN@GiveUpExisting",
+      "MAAOrch@SPA@CN@ArrivedQuickly",
+      "MAAOrch@SPA@CN@ArrivedQuicklyOcr",
+      "MAAOrch@SPA@CN@TutorialLocked",
+      "MAAOrch@SPA@CN@ClickSoloTab"
+    ]
   },
   "MAAOrch@SPA@CN@ClickTerminalOcr": {
     "doc": "主界面点击「终端」",
@@ -63,8 +79,9 @@
     "next": [
       "MAAOrch@SPA@CN@GiveUpExisting",
       "MAAOrch@SPA@CN@ArrivedQuickly",
+      "MAAOrch@SPA@CN@ArrivedQuicklyOcr",
       "MAAOrch@SPA@CN@TutorialLocked",
-      "MAAOrch@SPA@CN@ArrivedLobbyOcr",
+      "MAAOrch@SPA@CN@ClickSoloTab",
       "MAAOrch@SPA@CN@ClickTerminalBannerOcr",
       "MAAOrch@SPA@EnterCN"
     ]
@@ -79,8 +96,9 @@
     "next": [
       "MAAOrch@SPA@CN@GiveUpExisting",
       "MAAOrch@SPA@CN@ArrivedQuickly",
+      "MAAOrch@SPA@CN@ArrivedQuicklyOcr",
       "MAAOrch@SPA@CN@TutorialLocked",
-      "MAAOrch@SPA@CN@ArrivedLobbyOcr",
+      "MAAOrch@SPA@CN@ClickSoloTab",
       "MAAOrch@SPA@CN@ClosePopup",
       "MAAOrch@SPA@CN@ClickTerminalBannerOcr"
     ]
@@ -95,7 +113,8 @@
     "next": [
       "MAAOrch@SPA@CN@ReturnHome",
       "MAAOrch@SPA@CN@ArrivedQuickly",
-      "MAAOrch@SPA@CN@ArrivedLobbyOcr"
+      "MAAOrch@SPA@CN@ArrivedQuicklyOcr",
+      "MAAOrch@SPA@CN@ClickSoloTab"
     ]
   },
   "MAAOrch@SPA@CN@ReturnHome": {
@@ -107,7 +126,8 @@
     "postDelay": 2500,
     "next": [
       "MAAOrch@SPA@CN@ArrivedQuickly",
-      "MAAOrch@SPA@CN@ArrivedLobbyOcr"
+      "MAAOrch@SPA@CN@ArrivedQuicklyOcr",
+      "MAAOrch@SPA@CN@ClickSoloTab"
     ]
   },
   "MAAOrch@SPA@CN@ClosePopup": {

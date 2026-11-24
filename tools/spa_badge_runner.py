@@ -258,7 +258,10 @@ def main():
                 exit_code = 10
                 break
             if events["all_done"] or not dll.AsstRunning(handle):
-                print(f"[emu={args.emu}] Completed! last_task={events['last_task']} errors={len(events['errors'])}", flush=True)
+                has_sp_err = any("StrongholdProtocolTaskPlugin" in raw for _, raw in events["errors"])
+                print(f"[emu={args.emu}] Completed! last_task={events['last_task']} errors={len(events['errors'])} sp_err={has_sp_err}", flush=True)
+                if has_sp_err:
+                    exit_code = 12
                 break
         else:
             print(f"[emu={args.emu}] Timeout after {args.max_minutes}m, stopping...", flush=True)
