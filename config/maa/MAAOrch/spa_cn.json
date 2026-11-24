@@ -244,12 +244,12 @@
     ]
   },
   "MAAOrch@SPA@CN@ClosePopup": {
-    "doc": "关掉首次进入介绍/提示弹窗",
+    "doc": "关掉首次进入介绍/提示弹窗或 04:00 跨日同步确认弹窗",
     "algorithm": "OcrDetect",
     "action": "ClickSelf",
-    "text": ["关闭", "知道了", "跳过"],
+    "text": ["关闭", "知道了", "跳过", "数据已更新", "确定"],
     "roi": [0, 0, 1280, 720],
-    "postDelay": 1500,
+    "postDelay": 1800,
     "next": ["MAAOrch@SPA@EnterCN"]
   }
 }

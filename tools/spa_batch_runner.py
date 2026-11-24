@@ -330,6 +330,22 @@ def main():
             return
         else:
             st = {11: "timeout", 12: "plugin_error", 13: "stalled", 16: "nav_not_solo"}.get(rc, f"failed_rc_{rc}")
+            now_dt = datetime.datetime.now()
+            in_daily_reset = (now_dt.hour == 3 and now_dt.minute >= 58) or (now_dt.hour == 4 and now_dt.minute <= 20)
+            if in_daily_reset and rc in (12, 13):
+                # CN 04:00 daily server sync ("数据已更新，即将进行同步"): reboot & relogin without burning retry budget
+                print(
+                    f"[batch][emu={emu} {name}] Hit 04:00 daily reset window ({st}, rc={rc}); relogging without consuming retry.",
+                    flush=True,
+                )
+                if not args.skip_emu_check:
+                    force_shutdown_emu(args.mumu_mgr, emu)
+                with status_lock:
+                    retries_by_emu[emu] = max(0, retries_by_emu[emu] - 1)
+                    state["accounts"][emu_str]["status"] = "pending"
+                    next_eligible_at[emu] = time.time() + (1 if args.skip_emu_check else 15)
+                save_status()
+                return
             print(f"[batch][emu={emu} {name}] Attempt {attempt_num} ended with {st} (rc={rc})", flush=True)
             if not args.skip_emu_check:
                 force_shutdown_emu(args.mumu_mgr, emu)
