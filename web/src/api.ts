@@ -285,6 +285,15 @@ export const api = {
   /** 停止当前卫戍协议批量任务。 */
   spaStop: () => post<{ ok: boolean; stoppedPids?: number[] }>('/api/spa/stop', {}),
 
+  spaAccountStop: (emu: number) =>
+    post<{ ok: boolean }>('/api/spa/account/stop', { emu }),
+
+  spaAccountStart: (emu: number) =>
+    post<{ ok: boolean }>('/api/spa/account/start', { emu }),
+
+  spaUpdateConfig: (concurrency: number) =>
+    post<{ ok: boolean }>('/api/spa/config', { concurrency }),
+
   /** 查看单个模拟器或总调度日志尾巴（emu='main' 为总调度日志）。 */
   spaLog: async (emu: string): Promise<string> => {
     const res = await fetch(`/api/spa/log/${encodeURIComponent(emu)}`, { cache: 'no-store' })

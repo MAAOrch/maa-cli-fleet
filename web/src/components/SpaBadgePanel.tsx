@@ -8,6 +8,8 @@ function statusLabel(st?: string): { text: string; color: string } {
   if (st === 'running') return { text: '刷取中', color: '#3b82f6' }
   if (st.startsWith('retrying_')) return { text: `自动重试 (${st.replace('retrying_', '#')})`, color: '#f59e0b' }
   if (st === 'waiting_mas_idle') return { text: '避让 MAS 中', color: '#a855f7' }
+  if (st === 'paused_for_mas') return { text: '礼让 MAS 暂停', color: '#a855f7' }
+  if (st === 'paused_by_user') return { text: '已单号暂停', color: '#94a3b8' }
   if (st === 'pending') return { text: '排队中', color: '#94a3b8' }
   if (st === 'tutorial_locked' || st === 'skipped_tutorial_locked') {
     return { text: '未过入门协议', color: '#ef4444' }
@@ -148,6 +150,48 @@ export function SpaBadgePanel() {
     }
   }
 
+  async function handleAccountStop(emu: string, name: string) {
+    setBusy(true)
+    setNotice('')
+    try {
+      await api.spaAccountStop(Number(emu))
+      setNotice(`已发送热停指令：仅停 emu=${emu}（${name}），其余在跑账号不受影响`)
+      refreshStatus()
+    } catch (err) {
+      setNotice(describeError(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleAccountStart(emu: string, name: string) {
+    setBusy(true)
+    setNotice('')
+    try {
+      await api.spaAccountStart(Number(emu))
+      setNotice(`已热加入队列：emu=${emu}（${name}），其余在跑账号不受影响`)
+      refreshStatus()
+    } catch (err) {
+      setNotice(describeError(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleApplyConcurrency() {
+    setBusy(true)
+    setNotice('')
+    try {
+      await api.spaUpdateConfig(concurrency)
+      setNotice(`已热更新整机并发上限为 ${concurrency} 开（不重启当前任务）`)
+      refreshStatus()
+    } catch (err) {
+      setNotice(describeError(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <section
       style={{
@@ -235,6 +279,17 @@ export function SpaBadgePanel() {
                 style={{ width: 52, marginLeft: 4 }}
               />
             </label>
+
+            {data?.running ? (
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={busy}
+                onClick={() => void handleApplyConcurrency()}
+              >
+                热改并发
+              </button>
+            ) : null}
 
             <label>
               单号目标胜场：
@@ -326,7 +381,29 @@ export function SpaBadgePanel() {
                         {st?.started_at ? st.started_at.slice(5) : '—'}
                         {st?.finished_at ? ` → ${st.finished_at.slice(11)}` : ''}
                       </td>
-                      <td style={{ padding: '5px 8px' }}>
+                      <td style={{ padding: '5px 8px', display: 'flex', gap: 6, alignItems: 'center' }}>
+                        {data?.running ? (
+                          ['running', 'pending', 'waiting_mas_idle', 'paused_for_mas'].includes(st?.status ?? '') ||
+                          (st?.status ?? '').startsWith('retrying_') ? (
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm"
+                              disabled={busy}
+                              onClick={() => void handleAccountStop(acc.emu, acc.name)}
+                            >
+                              单停
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              disabled={busy}
+                              onClick={() => void handleAccountStart(acc.emu, acc.name)}
+                            >
+                              热加
+                            </button>
+                          )
+                        ) : null}
                         <button
                           type="button"
                           className="btn btn-sm"
