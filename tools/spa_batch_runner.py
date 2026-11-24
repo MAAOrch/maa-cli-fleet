@@ -30,6 +30,26 @@ def now_iso() -> str:
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+def has_active_mas_lock(locks_dir: str, max_age_sec: int = 180) -> str:
+    """Return lock filename if a fresh AUTO-MAS pause lock (*.lock) exists, else empty string."""
+    if not locks_dir:
+        return ""
+    p = Path(locks_dir)
+    if not p.is_dir():
+        return ""
+    cutoff = time.time() - max_age_sec
+    try:
+        for f in p.glob("*.lock"):
+            try:
+                if f.stat().st_mtime >= cutoff:
+                    return f.name
+            except OSError:
+                continue
+    except OSError:
+        return ""
+    return ""
+
+
 def is_mas_maa_running() -> bool:
     """Return True if any GUI MAA.exe (used by AUTO-MAS) is currently running."""
     try:
@@ -84,6 +104,9 @@ def main():
     ap.add_argument("--max-minutes", type=int, default=300)
     ap.add_argument("--stall-minutes", type=int, default=12)
     ap.add_argument("--max-retries", type=int, default=3, help="Auto-retry count on transient failure/stall")
+    ap.add_argument("--pause-locks-dir", default=r"E:\fleet-pause\locks", help="AUTO-MAS fleet-pause locks directory")
+    ap.add_argument("--mas-poll-sec", type=int, default=30, help="Seconds to sleep while waiting for AUTO-MAS to finish")
+    ap.add_argument("--skip-emu-check", action="store_true", help="Skip MuMuManager check (for unit/integration tests)")
     ap.add_argument("--skip-emus", default="3,22", help="Comma-separated emu indices to skip")
     ap.add_argument("--only-emus", default="", help="Optional comma-separated emu indices to run")
     args = ap.parse_args()
@@ -170,17 +193,26 @@ def main():
 
         while attempt_num <= args.max_retries:
             attempt_num += 1
-            while is_mas_maa_running() or is_emu_running(args.mumu_mgr, emu):
+            while (
+                (not args.skip_emu_check and is_mas_maa_running())
+                or bool(has_active_mas_lock(args.pause_locks_dir))
+                or (not args.skip_emu_check and is_emu_running(args.mumu_mgr, emu))
+            ):
+                lock_name = has_active_mas_lock(args.pause_locks_dir)
                 with status_lock:
                     state["accounts"][emu_str]["status"] = "waiting_mas_idle"
                 save_status()
-                print(f"[batch][emu={emu} {name}] Waiting for AUTO-MAS / emu idle...", flush=True)
-                time.sleep(30)
+                print(
+                    f"[batch][emu={emu} {name}] Waiting for AUTO-MAS / emu idle (lock={lock_name or 'none'})...",
+                    flush=True,
+                )
+                time.sleep(max(1, args.mas_poll_sec))
 
             with launch_gate:
                 gap = time.time() - last_launch[0]
-                if gap < 15:
-                    time.sleep(15 - gap)
+                min_gap = 0 if args.skip_emu_check else 15
+                if gap < min_gap:
+                    time.sleep(min_gap - gap)
                 last_launch[0] = time.time()
 
             with status_lock:
@@ -204,8 +236,9 @@ def main():
                 "--attempts", str(args.attempts),
                 "--max-minutes", str(args.max_minutes),
                 "--stall-minutes", str(args.stall_minutes),
+                "--pause-locks-dir", args.pause_locks_dir,
             ]
-            mode_open = "w" if attempt_num == 1 else "a"
+            mode_open = "w" if (attempt_num == 1 and not log_file.exists()) else "a"
             with open(log_file, mode_open, encoding="utf-8", errors="replace") as lf:
                 if attempt_num > 1:
                     lf.write(f"\n=== AUTO-RETRY #{attempt_num - 1} at {now_iso()} ===\n")
@@ -222,13 +255,23 @@ def main():
             if rc == 14:
                 st = "consecutive_losses"
                 break
+            if rc == 15:
+                # Yielded cleanly for AUTO-MAS: do NOT burn retry budget; wait until MAS finishes and resume!
+                attempt_num -= 1
+                with status_lock:
+                    state["accounts"][emu_str]["status"] = "paused_for_mas"
+                save_status()
+                print(f"[batch][emu={emu} {name}] Yielded for AUTO-MAS (rc=15); will auto-resume when MAS clears.", flush=True)
+                time.sleep(max(1, args.mas_poll_sec))
+                continue
 
             # Transient failure (ADB / 30s screen lost / stall / timeout) -> clean reboot & retry
             st = {11: "timeout", 12: "plugin_error", 13: "stalled"}.get(rc, f"failed_rc_{rc}")
             print(f"[batch][emu={emu} {name}] Attempt {attempt_num} ended with {st} (rc={rc})", flush=True)
-            force_shutdown_emu(args.mumu_mgr, emu)
+            if not args.skip_emu_check:
+                force_shutdown_emu(args.mumu_mgr, emu)
             if attempt_num <= args.max_retries:
-                time.sleep(15)
+                time.sleep(1 if args.skip_emu_check else 15)
 
         with status_lock:
             state["accounts"][emu_str].update({

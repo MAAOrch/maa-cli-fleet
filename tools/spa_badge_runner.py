@@ -20,6 +20,8 @@ Exit codes:
   11 = max_minutes hard timeout
   12 = StrongholdProtocolTaskPlugin SubTaskError (e.g. screen lost >30s)
   13 = stall watchdog triggered (no progress for --stall-minutes)
+  14 = consecutive losses circuit-breaker triggered
+  15 = paused/yielded for AUTO-MAS lock (E:\fleet-pause\locks\*.lock)
 """
 
 import argparse
@@ -56,6 +58,26 @@ MSG_NAMES = {
     20003: "SubTaskExtraInfo",
     20004: "SubTaskStopped",
 }
+
+
+def has_active_mas_lock(locks_dir: str, max_age_sec: int = 180) -> str:
+    """Return lock filename if a fresh AUTO-MAS pause lock (*.lock) exists, else empty string."""
+    if not locks_dir:
+        return ""
+    p = Path(locks_dir)
+    if not p.is_dir():
+        return ""
+    cutoff = time.time() - max_age_sec
+    try:
+        for f in p.glob("*.lock"):
+            try:
+                if f.stat().st_mtime >= cutoff:
+                    return f.name
+            except OSError:
+                continue
+    except OSError:
+        return ""
+    return ""
 
 
 def run_mumu(mumu_mgr: str, args: list[str], timeout: int = 60) -> subprocess.CompletedProcess:
@@ -121,6 +143,7 @@ def main():
     ap.add_argument("--max-minutes", type=int, default=300, help="Hard safety timeout in minutes")
     ap.add_argument("--stall-minutes", type=int, default=12, help="Abort with rc=13 if no task progress for N minutes")
     ap.add_argument("--max-consecutive-losses", type=int, default=4, help="Circuit-breaker: abort with rc=14 after N consecutive losses (0=disable)")
+    ap.add_argument("--pause-locks-dir", default=r"E:\fleet-pause\locks", help="AUTO-MAS fleet-pause locks dir (yield with rc=15 when fresh *.lock exists)")
     ap.add_argument("--skip-theme-check", action="store_true", help="Skip auto-switching to default theme 卫戍协议终端")
     ap.add_argument("--gpu", type=int, default=-1, help="GPU ID for OCR (-1 = CPU OCR)")
     args = ap.parse_args()
@@ -359,6 +382,15 @@ def main():
                 )
                 dll.AsstStop(handle)
                 exit_code = 14
+                break
+            mas_lock = has_active_mas_lock(args.pause_locks_dir)
+            if mas_lock:
+                print(
+                    f"[emu={args.emu}] MAS PAUSE LOCK detected ({mas_lock}), yielding emulator cleanly for AUTO-MAS...",
+                    flush=True,
+                )
+                dll.AsstStop(handle)
+                exit_code = 15
                 break
             if events["all_done"] or not dll.AsstRunning(handle):
                 has_sp_err = any("StrongholdProtocolTaskPlugin" in raw for _, raw in events["errors"])
