@@ -320,7 +320,7 @@ def main():
         ):
             print(f"ERROR: AsstConnect failed for {addr}", file=sys.stderr)
             exit_code = 5
-            return
+            return exit_code
 
         if not args.skip_nav:
             pkg = "com.hypergryph.arknights" if args.client == "Official" else "com.hypergryph.arknights.bilibili"
@@ -352,7 +352,7 @@ def main():
             if not dll.AsstStart(handle):
                 print("ERROR: AsstStart (Phase 1) failed", file=sys.stderr)
                 exit_code = 7
-                return
+                return exit_code
 
             events["last_activity"] = time.time()
             nav_deadline = time.time() + min(args.max_minutes * 60, 8 * 60)
@@ -362,20 +362,28 @@ def main():
                     print(f"[emu={args.emu}] STOP: Account has not completed 入门协议 (极速模拟 locked).", flush=True)
                     dll.AsstStop(handle)
                     exit_code = 10
-                    return
+                    return exit_code
                 mas_lock = has_active_mas_lock(args.pause_locks_dir)
                 if mas_lock:
                     print(f"[emu={args.emu}] MAS PAUSE LOCK detected ({mas_lock}) during nav, yielding...", flush=True)
                     dll.AsstStop(handle)
                     exit_code = 15
-                    return
+                    return exit_code
                 if events["all_done"] or not dll.AsstRunning(handle):
                     break
             else:
                 print(f"[emu={args.emu}] NAV TIMEOUT (8m), aborting before StrongholdProtocol...", flush=True)
                 dll.AsstStop(handle)
                 exit_code = 16
-                return
+                return exit_code
+
+            # Wait for MaaCore worker thread to settle before starting Phase 2
+            settle_end = time.time() + 10
+            while dll.AsstRunning(handle) and time.time() < settle_end:
+                time.sleep(0.25)
+            if dll.AsstRunning(handle):
+                dll.AsstStop(handle)
+                time.sleep(1.0)
 
             if not events["solo_confirmed"]:
                 print(
@@ -383,9 +391,10 @@ def main():
                     flush=True,
                 )
                 exit_code = 16
-                return
+                return exit_code
             print(f"[emu={args.emu}] NAV GATE PASSED: 个人模拟/极速模拟 confirmed.", flush=True)
             events["all_done"] = False
+            time.sleep(0.5)
 
         sp_params = {"enable": True, "mode": args.mode}
         if args.mode == "badge":
@@ -404,12 +413,16 @@ def main():
         if tid3 == 0:
             print("ERROR: AsstAppendTask(StrongholdProtocol) returned 0 (invalid params or unsupported core)", file=sys.stderr)
             exit_code = 6
-            return
+            return exit_code
 
-        if not dll.AsstStart(handle):
+        started = dll.AsstStart(handle)
+        if not started:
+            time.sleep(1.5)
+            started = dll.AsstStart(handle)
+        if not started:
             print("ERROR: AsstStart failed", file=sys.stderr)
             exit_code = 7
-            return
+            return exit_code
 
         events["last_activity"] = time.time()
         deadline = time.time() + args.max_minutes * 60
@@ -466,8 +479,8 @@ def main():
             print(f"[emu={args.emu}] Shutting down emulator...", flush=True)
             run_mumu(args.mumu_mgr, ["control", "-v", str(args.emu), "shutdown"], timeout=30)
 
-    sys.exit(exit_code)
+    return exit_code
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
