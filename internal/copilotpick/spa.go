@@ -45,24 +45,41 @@ type SpaStartRequest struct {
 	SkipEmus     []string `json:"skipEmus"`     // optional skiplist
 }
 
+func (m *Manager) spaRoot() string {
+	if v := strings.TrimSpace(os.Getenv("SPA_ROOT")); v != "" {
+		return v
+	}
+	if _, err := os.Stat(filepath.Join(m.cfg.Root, "config", "spa_cn_batch.json")); err == nil {
+		return m.cfg.Root
+	}
+	if _, err := os.Stat(filepath.Join(m.cfg.Root, "maa_v623", "MaaCore.dll")); err == nil {
+		return m.cfg.Root
+	}
+	const fleetFallback = `E:\maa-cli-fleet`
+	if _, err := os.Stat(filepath.Join(fleetFallback, "config", "spa_cn_batch.json")); err == nil {
+		return fleetFallback
+	}
+	return m.cfg.Root
+}
+
 func (m *Manager) spaConfigPath() string {
-	return filepath.Join(m.cfg.Root, "config", "spa_cn_batch.json")
+	return filepath.Join(m.spaRoot(), "config", "spa_cn_batch.json")
 }
 
 func (m *Manager) spaBatchRunnerPath() string {
-	return filepath.Join(m.cfg.Root, "tools", "spa_batch_runner.py")
+	return filepath.Join(m.spaRoot(), "tools", "spa_batch_runner.py")
 }
 
 func (m *Manager) spaBadgeRunnerPath() string {
-	return filepath.Join(m.cfg.Root, "tools", "spa_badge_runner.py")
+	return filepath.Join(m.spaRoot(), "tools", "spa_badge_runner.py")
 }
 
 func (m *Manager) spaMaaCorePath() string {
-	return filepath.Join(m.cfg.Root, "maa_v623", "MaaCore.dll")
+	return filepath.Join(m.spaRoot(), "maa_v623", "MaaCore.dll")
 }
 
 func (m *Manager) spaLogDir() string {
-	return filepath.Join(m.cfg.Root, "logs")
+	return filepath.Join(m.spaRoot(), "logs")
 }
 
 func (m *Manager) spaStatusPath() string {
@@ -262,7 +279,7 @@ func (h *handler) spaStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cmd := exec.Command(py, args...)
-	cmd.Dir = h.m.cfg.Root
+	cmd.Dir = h.m.spaRoot()
 	cmd.Env = append(os.Environ(), "PYTHONUTF8=1")
 	cmd.Stdout = lf
 	cmd.Stderr = lf
