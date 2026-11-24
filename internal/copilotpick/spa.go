@@ -86,6 +86,45 @@ func (m *Manager) spaStatusPath() string {
 	return filepath.Join(m.spaLogDir(), "spa_batch_status.json")
 }
 
+func (m *Manager) spaControlPath() string {
+	return filepath.Join(m.spaLogDir(), "spa_batch_control.json")
+}
+
+// SpaBatchControl mirrors <log_dir>/spa_batch_control.json for zero-restart hot control.
+type SpaBatchControl struct {
+	Concurrency int    `json:"concurrency"`
+	PausedEmus  []int  `json:"paused_emus"`
+	ResumeEmus  []int  `json:"resume_emus"`
+	UpdatedAt   string `json:"updated_at,omitempty"`
+}
+
+func (m *Manager) readSpaControl() SpaBatchControl {
+	ctrl := SpaBatchControl{Concurrency: 5}
+	if b, err := os.ReadFile(m.spaControlPath()); err == nil {
+		_ = json.Unmarshal(b, &ctrl)
+	}
+	if ctrl.Concurrency <= 0 {
+		ctrl.Concurrency = 5
+	}
+	return ctrl
+}
+
+func (m *Manager) writeSpaControl(ctrl SpaBatchControl) error {
+	if err := os.MkdirAll(m.spaLogDir(), 0o755); err != nil {
+		return err
+	}
+	ctrl.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
+	b, err := json.MarshalIndent(ctrl, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := m.spaControlPath() + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, m.spaControlPath())
+}
+
 func findSpaPython() string {
 	cands := []string{
 		`C:\Program Files\Python312\python.exe`,
@@ -306,6 +345,89 @@ func (h *handler) spaStop(w http.ResponseWriter, r *http.Request) {
 		"ok":          true,
 		"stoppedPids": stopped,
 	})
+}
+
+func (h *handler) spaAccountStop(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Emu int `json:"emu"`
+	}
+	if err := decodeBody(w, r, &req); err != nil || req.Emu <= 0 {
+		writeErr(w, http.StatusBadRequest, "请提供有效的模拟器编号 emu")
+		return
+	}
+	ctrl := h.m.readSpaControl()
+	found := false
+	for _, e := range ctrl.PausedEmus {
+		if e == req.Emu {
+			found = true
+			break
+		}
+	}
+	if !found {
+		ctrl.PausedEmus = append(ctrl.PausedEmus, req.Emu)
+	}
+	filteredResume := ctrl.ResumeEmus[:0]
+	for _, e := range ctrl.ResumeEmus {
+		if e != req.Emu {
+			filteredResume = append(filteredResume, e)
+		}
+	}
+	ctrl.ResumeEmus = filteredResume
+	if err := h.m.writeSpaControl(ctrl); err != nil {
+		writeErr(w, http.StatusInternalServerError, "写入控制文件失败："+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "control": ctrl})
+}
+
+func (h *handler) spaAccountStart(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Emu int `json:"emu"`
+	}
+	if err := decodeBody(w, r, &req); err != nil || req.Emu <= 0 {
+		writeErr(w, http.StatusBadRequest, "请提供有效的模拟器编号 emu")
+		return
+	}
+	ctrl := h.m.readSpaControl()
+	filteredPaused := ctrl.PausedEmus[:0]
+	for _, e := range ctrl.PausedEmus {
+		if e != req.Emu {
+			filteredPaused = append(filteredPaused, e)
+		}
+	}
+	ctrl.PausedEmus = filteredPaused
+	found := false
+	for _, e := range ctrl.ResumeEmus {
+		if e == req.Emu {
+			found = true
+			break
+		}
+	}
+	if !found {
+		ctrl.ResumeEmus = append(ctrl.ResumeEmus, req.Emu)
+	}
+	if err := h.m.writeSpaControl(ctrl); err != nil {
+		writeErr(w, http.StatusInternalServerError, "写入控制文件失败："+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "control": ctrl})
+}
+
+func (h *handler) spaUpdateConfig(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Concurrency int `json:"concurrency"`
+	}
+	if err := decodeBody(w, r, &req); err != nil || req.Concurrency < 1 || req.Concurrency > 6 {
+		writeErr(w, http.StatusBadRequest, "concurrency 必须在 1 到 6 之间")
+		return
+	}
+	ctrl := h.m.readSpaControl()
+	ctrl.Concurrency = req.Concurrency
+	if err := h.m.writeSpaControl(ctrl); err != nil {
+		writeErr(w, http.StatusInternalServerError, "写入控制文件失败："+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "control": ctrl})
 }
 
 func (h *handler) spaLog(w http.ResponseWriter, r *http.Request) {
