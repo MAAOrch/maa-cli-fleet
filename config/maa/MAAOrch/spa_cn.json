@@ -5,6 +5,7 @@
     "retry_times": 90,
     "next": [
       "MAAOrch@SPA@CN@GiveUpExisting",
+      "MAAOrch@SPA@CN@ReconnectTerminated",
       "MAAOrch@SPA@CN@ConfirmGiveUp",
       "MAAOrch@SPA@CN@ReturnHome",
       "MAAOrch@SPA@CN@TutorialLocked",
@@ -120,6 +121,23 @@
       "MAAOrch@SPA@EnterCN"
     ]
   },
+  "MAAOrch@SPA@CN@ReconnectTerminated": {
+    "doc": "检测到已终止局的「断线重连」（无放弃模拟按钮，点进后直接出结算页「返回主页」）",
+    "algorithm": "OcrDetect",
+    "action": "ClickSelf",
+    "text": ["断线重连", "已终止"],
+    "roi": [1040, 600, 230, 110],
+    "maxTimes": 3,
+    "postDelay": 3500,
+    "next": [
+      "MAAOrch@SPA@CN@ReturnHome",
+      "MAAOrch@SPA@CN@GiveUpExisting",
+      "MAAOrch@SPA@CN@ConfirmGiveUp",
+      "MAAOrch@SPA@CN@ArrivedQuickly",
+      "MAAOrch@SPA@CN@ArrivedQuicklyOcr",
+      "MAAOrch@SPA@CN@ClickSoloTab"
+    ]
+  },
   "MAAOrch@SPA@CN@ArrivedQuickly": {
     "doc": "已切到「个人模拟」且「极速模拟」模板可见，立即结束导航",
     "algorithm": "MatchTemplate",
@@ -153,6 +171,7 @@
     "postDelay": 1800,
     "next": [
       "MAAOrch@SPA@CN@GiveUpExisting",
+      "MAAOrch@SPA@CN@ReconnectTerminated",
       "MAAOrch@SPA@CN@ArrivedQuickly",
       "MAAOrch@SPA@CN@ArrivedQuicklyOcr",
       "MAAOrch@SPA@CN@TutorialLocked",
