@@ -66,6 +66,27 @@ def is_mas_maa_running() -> bool:
         return False
 
 
+def get_running_emus(mumu_mgr: str) -> set[int]:
+    """Return set of all currently running MuMu emulator indices."""
+    try:
+        r = subprocess.run(
+            [mumu_mgr, "info", "-v", "all"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+        )
+        data = json.loads(r.stdout)
+        return {
+            int(k)
+            for k, v in data.items()
+            if isinstance(v, dict) and (v.get("is_process_started") or v.get("is_android_started"))
+        }
+    except Exception:
+        return set()
+
+
 def is_emu_running(mumu_mgr: str, emu: int) -> bool:
     try:
         r = subprocess.run(
@@ -105,6 +126,7 @@ def main():
     ap.add_argument("--stall-minutes", type=int, default=12)
     ap.add_argument("--max-retries", type=int, default=3, help="Auto-retry count on transient failure/stall")
     ap.add_argument("--pause-locks-dir", default=r"E:\fleet-pause\locks", help="AUTO-MAS fleet-pause locks directory")
+    ap.add_argument("--mas-strict-yield", action="store_true", help="Pause ALL SPA slots on any AUTO-MAS lock (legacy global pause)")
     ap.add_argument("--mas-poll-sec", type=int, default=30, help="Seconds to sleep while waiting for AUTO-MAS to finish")
     ap.add_argument("--skip-emu-check", action="store_true", help="Skip MuMuManager check (for unit/integration tests)")
     ap.add_argument("--skip-emus", default="3,22", help="Comma-separated emu indices to skip")
@@ -176,6 +198,7 @@ def main():
 
     launch_gate = threading.Lock()
     last_launch = [0.0]
+    active_spa_emus: set[int] = set()
 
     env = os.environ.copy()
     env["PYTHONUTF8"] = "1"
@@ -193,27 +216,51 @@ def main():
 
         while attempt_num <= args.max_retries:
             attempt_num += 1
-            while (
-                (not args.skip_emu_check and is_mas_maa_running())
-                or bool(has_active_mas_lock(args.pause_locks_dir))
-                or (not args.skip_emu_check and is_emu_running(args.mumu_mgr, emu))
-            ):
-                lock_name = has_active_mas_lock(args.pause_locks_dir)
+            while True:
+                with launch_gate:
+                    if args.mas_strict_yield:
+                        blocked = (
+                            (not args.skip_emu_check and is_mas_maa_running())
+                            or bool(has_active_mas_lock(args.pause_locks_dir))
+                            or (not args.skip_emu_check and is_emu_running(args.mumu_mgr, emu))
+                        )
+                        reason = f"strict lock={has_active_mas_lock(args.pause_locks_dir) or 'none'}"
+                    elif args.skip_emu_check:
+                        blocked = bool(has_active_mas_lock(args.pause_locks_dir))
+                        reason = f"lock={has_active_mas_lock(args.pause_locks_dir)}"
+                    else:
+                        running_all = get_running_emus(args.mumu_mgr)
+                        with status_lock:
+                            external_emus = running_all - active_spa_emus
+                            total_used = len(active_spa_emus) + len(external_emus)
+                        if emu in running_all:
+                            blocked = True
+                            reason = f"emu={emu} busy (MAS/user)"
+                        elif total_used >= args.concurrency:
+                            blocked = True
+                            reason = f"host_cap({len(active_spa_emus)} spa + {len(external_emus)} mas >= {args.concurrency})"
+                        else:
+                            blocked = False
+                            reason = ""
+
+                    if not blocked:
+                        gap = time.time() - last_launch[0]
+                        min_gap = 0 if args.skip_emu_check else 15
+                        if gap < min_gap:
+                            time.sleep(min_gap - gap)
+                        last_launch[0] = time.time()
+                        with status_lock:
+                            active_spa_emus.add(emu)
+                        break
+
                 with status_lock:
                     state["accounts"][emu_str]["status"] = "waiting_mas_idle"
                 save_status()
                 print(
-                    f"[batch][emu={emu} {name}] Waiting for AUTO-MAS / emu idle (lock={lock_name or 'none'})...",
+                    f"[batch][emu={emu} {name}] Waiting ({reason})...",
                     flush=True,
                 )
                 time.sleep(max(1, args.mas_poll_sec))
-
-            with launch_gate:
-                gap = time.time() - last_launch[0]
-                min_gap = 0 if args.skip_emu_check else 15
-                if gap < min_gap:
-                    time.sleep(min_gap - gap)
-                last_launch[0] = time.time()
 
             with status_lock:
                 state["accounts"][emu_str].update({
@@ -238,13 +285,19 @@ def main():
                 "--stall-minutes", str(args.stall_minutes),
                 "--pause-locks-dir", args.pause_locks_dir,
             ]
+            if args.mas_strict_yield:
+                cmd.append("--mas-strict-yield")
             mode_open = "w" if (attempt_num == 1 and not log_file.exists()) else "a"
-            with open(log_file, mode_open, encoding="utf-8", errors="replace") as lf:
-                if attempt_num > 1:
-                    lf.write(f"\n=== AUTO-RETRY #{attempt_num - 1} at {now_iso()} ===\n")
-                    lf.flush()
-                proc = subprocess.run(cmd, stdout=lf, stderr=subprocess.STDOUT, env=env)
-                rc = proc.returncode
+            try:
+                with open(log_file, mode_open, encoding="utf-8", errors="replace") as lf:
+                    if attempt_num > 1:
+                        lf.write(f"\n=== AUTO-RETRY #{attempt_num - 1} at {now_iso()} ===\n")
+                        lf.flush()
+                    proc = subprocess.run(cmd, stdout=lf, stderr=subprocess.STDOUT, env=env)
+                    rc = proc.returncode
+            finally:
+                with status_lock:
+                    active_spa_emus.discard(emu)
 
             if rc == 0:
                 st = "completed"

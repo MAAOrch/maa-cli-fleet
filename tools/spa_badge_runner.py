@@ -81,6 +81,66 @@ def has_active_mas_lock(locks_dir: str, max_age_sec: int = 180) -> str:
     return ""
 
 
+def get_mas_claimed_addrs(maa_multi_root: str = r"E:\MAA-Multi") -> set[str]:
+    """Return ADB addresses (e.g. '127.0.0.1:16708') currently claimed by running AUTO-MAS MAA.exe processes."""
+    claimed: set[str] = set()
+    root = Path(maa_multi_root)
+    if not root.is_dir():
+        return claimed
+    try:
+        ps = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                "Get-CimInstance Win32_Process -Filter \"Name='MAA.exe'\" | Select-Object -ExpandProperty ExecutablePath",
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=8,
+        )
+        exe_paths = [line.strip() for line in ps.stdout.splitlines() if line.strip()]
+    except Exception:
+        return claimed
+
+    for exe in exe_paths:
+        cfg_dir = Path(exe).parent / "config"
+        for fname in ("gui.new.json", "gui.json"):
+            fp = cfg_dir / fname
+            if not fp.exists():
+                continue
+            try:
+                data = json.loads(fp.read_text(encoding="utf-8", errors="replace"))
+                addr = (
+                    data.get("Configurations", {})
+                    .get("Default", {})
+                    .get("Gui", {})
+                    .get("ConnectSettings", {})
+                    .get("Address", "")
+                )
+                if addr:
+                    claimed.add(str(addr).strip())
+                    break
+            except Exception:
+                continue
+    return claimed
+
+
+def should_yield_for_mas(args, addr: str) -> str:
+    """Return yield reason string if this runner should yield to AUTO-MAS, else empty string."""
+    if args.mas_strict_yield:
+        return has_active_mas_lock(args.pause_locks_dir)
+    # Coexistence mode: only yield if AUTO-MAS's active MAA.exe claims OUR exact ADB address
+    if not has_active_mas_lock(args.pause_locks_dir):
+        return ""
+    claimed = get_mas_claimed_addrs(args.maa_multi_root)
+    if addr in claimed:
+        return f"MAS_CLAIMED({addr})"
+    return ""
+
+
 def run_mumu(mumu_mgr: str, args: list[str], timeout: int = 60) -> subprocess.CompletedProcess:
     return subprocess.run(
         [mumu_mgr] + args,
@@ -144,7 +204,9 @@ def main():
     ap.add_argument("--max-minutes", type=int, default=300, help="Hard safety timeout in minutes")
     ap.add_argument("--stall-minutes", type=int, default=12, help="Abort with rc=13 if no task progress for N minutes")
     ap.add_argument("--max-consecutive-losses", type=int, default=4, help="Circuit-breaker: abort with rc=14 after N consecutive losses (0=disable)")
-    ap.add_argument("--pause-locks-dir", default=r"E:\fleet-pause\locks", help="AUTO-MAS fleet-pause locks dir (yield with rc=15 when fresh *.lock exists)")
+    ap.add_argument("--pause-locks-dir", default=r"E:\fleet-pause\locks", help="AUTO-MAS fleet-pause locks dir")
+    ap.add_argument("--maa-multi-root", default=r"E:\MAA-Multi", help="AUTO-MAS MAA-Multi root dir for per-emu conflict detection")
+    ap.add_argument("--mas-strict-yield", action="store_true", help="Yield on ANY fleet-pause lock (legacy global pause)")
     ap.add_argument("--skip-theme-check", action="store_true", help="Skip auto-switching to default theme 卫戍协议终端")
     ap.add_argument("--gpu", type=int, default=-1, help="GPU ID for OCR (-1 = CPU OCR)")
     args = ap.parse_args()
@@ -379,9 +441,9 @@ def main():
                     dll.AsstStop(handle)
                     exit_code = 10
                     return exit_code
-                mas_lock = has_active_mas_lock(args.pause_locks_dir)
+                mas_lock = should_yield_for_mas(args, addr)
                 if mas_lock:
-                    print(f"[emu={args.emu}] MAS PAUSE LOCK detected ({mas_lock}) during nav, yielding...", flush=True)
+                    print(f"[emu={args.emu}] MAS CONFLICT detected ({mas_lock}) during nav, yielding...", flush=True)
                     dll.AsstStop(handle)
                     exit_code = 15
                     return exit_code
@@ -459,10 +521,10 @@ def main():
                 dll.AsstStop(handle)
                 exit_code = 14
                 break
-            mas_lock = has_active_mas_lock(args.pause_locks_dir)
+            mas_lock = should_yield_for_mas(args, addr)
             if mas_lock:
                 print(
-                    f"[emu={args.emu}] MAS PAUSE LOCK detected ({mas_lock}), yielding emulator cleanly for AUTO-MAS...",
+                    f"[emu={args.emu}] MAS CONFLICT detected ({mas_lock}), yielding emulator cleanly for AUTO-MAS...",
                     flush=True,
                 )
                 dll.AsstStop(handle)
@@ -491,7 +553,9 @@ def main():
             exit_code = 11
     finally:
         dll.AsstDestroy(handle)
-        if not args.no_shutdown:
+        # In coexistence mode, if yielding for AUTO-MAS on OUR emulator (rc=15), leave emulator running for MAS!
+        keep_for_mas = (exit_code == 15 and not args.mas_strict_yield)
+        if not args.no_shutdown and not keep_for_mas:
             print(f"[emu={args.emu}] Shutting down emulator...", flush=True)
             run_mumu(args.mumu_mgr, ["control", "-v", str(args.emu), "shutdown"], timeout=30)
 
