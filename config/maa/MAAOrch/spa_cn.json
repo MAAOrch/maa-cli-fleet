@@ -1,17 +1,32 @@
 {
   "MAAOrch@SPA@EnterCN": {
-    "doc": "国服卫戍协议三期「规程」进场导航：从主界面经终端进入卫戍协议主页并停在「极速模拟」入口，交由 MaaCore v6.23+ 原生 StrongholdProtocol 任务接管",
+    "doc": "国服卫戍协议三期「规程」进场导航：从主界面经终端进入卫戍协议主页，若有旧存档先自动放弃，停在「极速模拟」入口交由 MaaCore v6.23+ 原生 StrongholdProtocol 任务接管",
     "algorithm": "JustReturn",
     "retry_times": 90,
     "next": [
+      "MAAOrch@SPA@CN@GiveUpExisting",
+      "MAAOrch@SPA@CN@ConfirmGiveUp",
+      "MAAOrch@SPA@CN@ReturnHome",
       "MAAOrch@SPA@CN@ArrivedQuickly",
       "MAAOrch@SPA@CN@TutorialLocked",
       "MAAOrch@SPA@CN@ArrivedLobbyOcr",
-      "MAAOrch@SPA@CN@ConfirmGiveUp",
-      "MAAOrch@SPA@CN@ReturnHome",
       "MAAOrch@SPA@CN@ClickTerminalOcr",
       "MAAOrch@SPA@CN@ClickTerminalBannerOcr",
       "MAAOrch@SPA@CN@ClosePopup"
+    ]
+  },
+  "MAAOrch@SPA@CN@GiveUpExisting": {
+    "doc": "检测到主页有旧存档「放弃模拟」按钮，先点击放弃再确认，避免进入断线重连卡局",
+    "algorithm": "OcrDetect",
+    "action": "ClickSelf",
+    "text": ["放弃模拟"],
+    "roi": [760, 590, 260, 120],
+    "postDelay": 1800,
+    "next": [
+      "MAAOrch@SPA@CN@ConfirmGiveUp",
+      "MAAOrch@SPA@CN@ReturnHome",
+      "MAAOrch@SPA@CN@ArrivedQuickly",
+      "MAAOrch@SPA@EnterCN"
     ]
   },
   "MAAOrch@SPA@CN@ArrivedQuickly": {
@@ -31,7 +46,7 @@
     "next": []
   },
   "MAAOrch@SPA@CN@ArrivedLobbyOcr": {
-    "doc": "OCR 兜底识别已进入卫戍协议：规程主页（功勋兑换处 / 个人模拟 / 极速模拟），停止导航交给 StrongholdProtocol",
+    "doc": "OCR 兜底识别已进入卫戍协议：规程主页（极速模拟 / 功勋兑换处 / 个人模拟），停止导航交给 StrongholdProtocol",
     "algorithm": "OcrDetect",
     "text": ["极速模拟", "功勋兑换处", "个人模拟"],
     "roi": [0, 420, 1280, 300],
@@ -46,6 +61,7 @@
     "roi": [860, 120, 320, 220],
     "postDelay": 2500,
     "next": [
+      "MAAOrch@SPA@CN@GiveUpExisting",
       "MAAOrch@SPA@CN@ArrivedQuickly",
       "MAAOrch@SPA@CN@TutorialLocked",
       "MAAOrch@SPA@CN@ArrivedLobbyOcr",
@@ -61,6 +77,7 @@
     "roi": [820, 180, 450, 360],
     "postDelay": 3500,
     "next": [
+      "MAAOrch@SPA@CN@GiveUpExisting",
       "MAAOrch@SPA@CN@ArrivedQuickly",
       "MAAOrch@SPA@CN@TutorialLocked",
       "MAAOrch@SPA@CN@ArrivedLobbyOcr",
