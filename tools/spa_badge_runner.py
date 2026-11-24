@@ -120,6 +120,8 @@ def main():
     ap.add_argument("--no-shutdown", action="store_true", help="Keep emulator running after task completes")
     ap.add_argument("--max-minutes", type=int, default=300, help="Hard safety timeout in minutes")
     ap.add_argument("--stall-minutes", type=int, default=12, help="Abort with rc=13 if no task progress for N minutes")
+    ap.add_argument("--max-consecutive-losses", type=int, default=4, help="Circuit-breaker: abort with rc=14 after N consecutive losses (0=disable)")
+    ap.add_argument("--skip-theme-check", action="store_true", help="Skip auto-switching to default theme 卫戍协议终端")
     ap.add_argument("--gpu", type=int, default=-1, help="GPU ID for OCR (-1 = CPU OCR)")
     args = ap.parse_args()
 
@@ -179,13 +181,38 @@ def main():
     events = {
         "all_done": False,
         "tutorial_locked": False,
+        "loss_abort": False,
         "errors": [],
         "last_task": "",
         "last_activity": time.time(),
         "wins": 0,
         "losses": 0,
-        "strategies": [],
+        "attempted": 0,
+        "consecutive_losses": 0,
+        "strategy": "",
+        "strategy_passed": 0,
+        "strategy_target": args.target,
     }
+    progress_file = state_dir / "progress.json"
+
+    def write_progress():
+        try:
+            payload = {
+                "emu": args.emu,
+                "wins": events["wins"],
+                "losses": events["losses"],
+                "attempted": events["attempted"],
+                "consecutive_losses": events["consecutive_losses"],
+                "strategy": events["strategy"],
+                "strategy_passed": events["strategy_passed"],
+                "strategy_target": events["strategy_target"],
+                "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            tmp = progress_file.with_suffix(".tmp")
+            tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            tmp.replace(progress_file)
+        except Exception:
+            pass
 
     @ASST_CALLBACK
     def on_msg(msg: int, details_bytes: bytes, _arg):
@@ -207,21 +234,37 @@ def main():
 
         if what == "StrongholdStrategy":
             d = data.get("details", {})
-            events["strategies"].append(d)
+            events["strategy"] = str(d.get("name", ""))
+            events["strategy_passed"] = int(d.get("passed", 0) or 0)
+            events["strategy_target"] = int(d.get("target", args.target) or args.target)
+            write_progress()
             print(
-                f"[emu={args.emu}] [PROGRESS] Strategy={d.get('name')} passed={d.get('passed')}/{d.get('target')}",
+                f"[emu={args.emu}] [PROGRESS] Strategy={events['strategy']} passed={events['strategy_passed']}/{events['strategy_target']}",
                 flush=True,
             )
-        elif what in ("StrongholdResult", "StrongholdFinish", "StrongholdRunResult") or "Victory" in raw or "Defeat" in raw:
-            if "Victory" in raw or data.get("details", {}).get("win") is True:
-                events["wins"] += 1
-            elif "Defeat" in raw or data.get("details", {}).get("win") is False:
+        elif what == "StrongholdSettlement":
+            d = data.get("details", {})
+            cleared = bool(d.get("cleared"))
+            events["attempted"] = int(d.get("attempted", events["attempted"] + 1) or 0)
+            if cleared:
+                events["wins"] = int(d.get("progress", events["wins"] + 1) or 0)
+                events["consecutive_losses"] = 0
+            else:
                 events["losses"] += 1
-            print(f"[emu={args.emu}] [PROGRESS] {what or name}: {raw[:300]}", flush=True)
+                events["consecutive_losses"] += 1
+            if d.get("strategy"):
+                events["strategy"] = str(d.get("strategy"))
+            write_progress()
+            print(
+                f"[emu={args.emu}] [SETTLEMENT] strategy={events['strategy']} cleared={cleared} wins={events['wins']}/{d.get('total', args.runs)} attempted={events['attempted']} streak_loss={events['consecutive_losses']}",
+                flush=True,
+            )
+            if args.max_consecutive_losses > 0 and events["consecutive_losses"] >= args.max_consecutive_losses:
+                events["loss_abort"] = True
         elif msg in (0, 1, 10000, 20000):
             events["errors"].append((name, raw[:300]))
             print(f"[emu={args.emu}] [{name}] {raw[:300]}", flush=True)
-        elif msg in (3, 10001, 10002, 10004, 20003) or "Arrived" in raw or "GiveUp" in raw or "ClickSolo" in raw:
+        elif msg in (3, 10001, 10002, 10004, 20003) or "Arrived" in raw or "GiveUp" in raw or "ClickSolo" in raw or "Theme" in raw:
             print(f"[emu={args.emu}] [{name}] {raw[:300]}", flush=True)
 
         if msg == 3:
@@ -265,7 +308,14 @@ def main():
                 b"Custom",
                 json.dumps({"enable": True, "task_names": ["MAAOrch@SPA@EnterCN"]}).encode("utf-8"),
             )
-            print(f"[emu={args.emu}] Queued StartUp={tid1}, Nav={tid2}", flush=True)
+            tid_theme = 0
+            if not args.skip_theme_check:
+                tid_theme = dll.AsstAppendTask(
+                    handle,
+                    b"Custom",
+                    json.dumps({"enable": True, "task_names": ["MAAOrch@SPA@EnsureDefaultTheme"]}).encode("utf-8"),
+                )
+            print(f"[emu={args.emu}] Queued StartUp={tid1}, Nav={tid2}, DefaultTheme={tid_theme}", flush=True)
 
         sp_params = {"enable": True, "mode": args.mode}
         if args.mode == "badge":
@@ -301,6 +351,14 @@ def main():
                 print(f"[emu={args.emu}] STOP: Account has not completed 入门协议 (极速模拟 locked).", flush=True)
                 dll.AsstStop(handle)
                 exit_code = 10
+                break
+            if events["loss_abort"]:
+                print(
+                    f"[emu={args.emu}] CIRCUIT BREAKER: {events['consecutive_losses']} consecutive losses (wins={events['wins']}), aborting to avoid spinning.",
+                    flush=True,
+                )
+                dll.AsstStop(handle)
+                exit_code = 14
                 break
             if events["all_done"] or not dll.AsstRunning(handle):
                 has_sp_err = any("StrongholdProtocolTaskPlugin" in raw for _, raw in events["errors"])

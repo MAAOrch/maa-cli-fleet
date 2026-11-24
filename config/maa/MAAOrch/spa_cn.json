@@ -1,19 +1,88 @@
 {
   "MAAOrch@SPA@EnterCN": {
-    "doc": "国服卫戍协议三期「规程」进场导航：主界面 -> 终端 -> 卫戍协议 -> 放弃旧存档(如有) -> 切到「个人模拟」页签 -> 确认「极速模拟」图标可见后交由 MaaCore v6.23+ 原生 StrongholdProtocol 接管",
+    "doc": "国服卫戍协议三期「规程」进场导航：主界面 -> 终端 -> 卫戍协议 -> 放弃旧存档(如有) -> 停在卫戍协议主页",
     "algorithm": "JustReturn",
     "retry_times": 90,
     "next": [
       "MAAOrch@SPA@CN@GiveUpExisting",
       "MAAOrch@SPA@CN@ConfirmGiveUp",
       "MAAOrch@SPA@CN@ReturnHome",
+      "MAAOrch@SPA@CN@TutorialLocked",
       "MAAOrch@SPA@CN@ArrivedQuickly",
       "MAAOrch@SPA@CN@ArrivedQuicklyOcr",
-      "MAAOrch@SPA@CN@TutorialLocked",
       "MAAOrch@SPA@CN@ClickSoloTab",
       "MAAOrch@SPA@CN@ClickTerminalOcr",
       "MAAOrch@SPA@CN@ClickTerminalBannerOcr",
       "MAAOrch@SPA@CN@ClosePopup"
+    ]
+  },
+  "MAAOrch@SPA@EnsureDefaultTheme": {
+    "doc": "在卫戍协议主页强制检查并切回默认皮肤「卫戍协议终端」，切完返回主页并停在「极速模拟」入口",
+    "algorithm": "JustReturn",
+    "retry_times": 25,
+    "next": [
+      "MAAOrch@SPA@Theme@ClickOpen",
+      "MAAOrch@SPA@Theme@SelectDefault"
+    ]
+  },
+  "MAAOrch@SPA@Theme@ClickOpen": {
+    "doc": "点击卫戍协议大厅左下角「更换主题」",
+    "algorithm": "OcrDetect",
+    "action": "ClickSelf",
+    "text": ["更换主题"],
+    "roi": [250, 635, 190, 80],
+    "postDelay": 2000,
+    "next": [
+      "MAAOrch@SPA@Theme@SelectDefault",
+      "MAAOrch@SPA@Theme@ClickOpen"
+    ]
+  },
+  "MAAOrch@SPA@Theme@SelectDefault": {
+    "doc": "在主题列表右侧选择默认主题「卫戍协议终端」",
+    "algorithm": "OcrDetect",
+    "action": "ClickSelf",
+    "text": ["卫戍协议终端"],
+    "roi": [1000, 100, 270, 160],
+    "postDelay": 1500,
+    "next": [
+      "MAAOrch@SPA@Theme@ApplyBtn",
+      "MAAOrch@SPA@Theme@AlreadySet",
+      "MAAOrch@SPA@Theme@SelectDefault"
+    ]
+  },
+  "MAAOrch@SPA@Theme@ApplyBtn": {
+    "doc": "若未应用则点击右下角「设置主题」",
+    "algorithm": "OcrDetect",
+    "action": "ClickSelf",
+    "text": ["设置主题"],
+    "roi": [950, 610, 240, 100],
+    "postDelay": 1800,
+    "next": [
+      "MAAOrch@SPA@Theme@BackToLobby"
+    ]
+  },
+  "MAAOrch@SPA@Theme@AlreadySet": {
+    "doc": "已是默认主题「已设置」，直接返回主页",
+    "algorithm": "OcrDetect",
+    "action": "DoNothing",
+    "text": ["已设置"],
+    "roi": [950, 610, 240, 100],
+    "postDelay": 500,
+    "next": [
+      "MAAOrch@SPA@Theme@BackToLobby"
+    ]
+  },
+  "MAAOrch@SPA@Theme@BackToLobby": {
+    "doc": "点左上角返回按钮回到卫戍协议主页，再切回「个人模拟」确认「极速模拟」",
+    "algorithm": "JustReturn",
+    "action": "ClickRect",
+    "specificRect": [40, 25, 45, 35],
+    "postDelay": 2200,
+    "next": [
+      "MAAOrch@SPA@CN@ArrivedQuickly",
+      "MAAOrch@SPA@CN@ArrivedQuicklyOcr",
+      "MAAOrch@SPA@CN@ClickSoloTab",
+      "MAAOrch@SPA@Theme@BackToLobby"
     ]
   },
   "MAAOrch@SPA@CN@GiveUpExisting": {
@@ -31,7 +100,7 @@
     ]
   },
   "MAAOrch@SPA@CN@ArrivedQuickly": {
-    "doc": "已切到「个人模拟」且「极速模拟」模板可见，立即结束导航交给 StrongholdProtocol",
+    "doc": "已切到「个人模拟」且「极速模拟」模板可见，立即结束导航",
     "algorithm": "MatchTemplate",
     "template": "StrongholdProtocol@EnterIndependentQuickly.png",
     "roi": [707, 549, 166, 171],
@@ -39,7 +108,7 @@
     "next": []
   },
   "MAAOrch@SPA@CN@ArrivedQuicklyOcr": {
-    "doc": "OCR 兜底确认「极速模拟」按钮可见，立即结束导航交给 StrongholdProtocol",
+    "doc": "OCR 兜底确认「极速模拟」按钮可见，立即结束导航",
     "algorithm": "OcrDetect",
     "text": ["极速模拟"],
     "roi": [680, 540, 260, 180],

@@ -219,6 +219,9 @@ def main():
             if rc == 10:
                 st = "tutorial_locked"
                 break
+            if rc == 14:
+                st = "consecutive_losses"
+                break
 
             # Transient failure (ADB / 30s screen lost / stall / timeout) -> clean reboot & retry
             st = {11: "timeout", 12: "plugin_error", 13: "stalled"}.get(rc, f"failed_rc_{rc}")
