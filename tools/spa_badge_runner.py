@@ -22,6 +22,7 @@ Exit codes:
   13 = stall watchdog triggered (no progress for --stall-minutes)
   14 = consecutive losses circuit-breaker triggered
   15 = paused/yielded for AUTO-MAS lock (E:\fleet-pause\locks\*.lock)
+  16 = nav gate failed (个人模拟 / 极速模拟 not confirmed; refused to start StrongholdProtocol)
 """
 
 import argparse
@@ -204,6 +205,8 @@ def main():
     events = {
         "all_done": False,
         "tutorial_locked": False,
+        "solo_confirmed": False,
+        "theme_tid": 0,
         "loss_abort": False,
         "errors": [],
         "last_task": "",
@@ -254,6 +257,12 @@ def main():
 
         if "TutorialLocked" in raw:
             events["tutorial_locked"] = True
+
+        # Track whether 个人模拟 / 极速模拟 was confirmed AFTER the final nav/theme step.
+        if msg == 10001 and events["theme_tid"] and data.get("taskid") == events["theme_tid"]:
+            events["solo_confirmed"] = False
+        if msg == 20002 and ("ArrivedQuickly" in raw or "ArrivedQuicklyOcr" in raw):
+            events["solo_confirmed"] = True
 
         if what == "StrongholdStrategy":
             d = data.get("details", {})
@@ -338,7 +347,45 @@ def main():
                     b"Custom",
                     json.dumps({"enable": True, "task_names": ["MAAOrch@SPA@EnsureDefaultTheme"]}).encode("utf-8"),
                 )
-            print(f"[emu={args.emu}] Queued StartUp={tid1}, Nav={tid2}, DefaultTheme={tid_theme}", flush=True)
+            events["theme_tid"] = tid_theme
+            print(f"[emu={args.emu}] Phase 1 (Nav+Theme): StartUp={tid1}, Nav={tid2}, DefaultTheme={tid_theme}", flush=True)
+            if not dll.AsstStart(handle):
+                print("ERROR: AsstStart (Phase 1) failed", file=sys.stderr)
+                exit_code = 7
+                return
+
+            events["last_activity"] = time.time()
+            nav_deadline = time.time() + min(args.max_minutes * 60, 8 * 60)
+            while time.time() < nav_deadline:
+                time.sleep(2)
+                if events["tutorial_locked"]:
+                    print(f"[emu={args.emu}] STOP: Account has not completed 入门协议 (极速模拟 locked).", flush=True)
+                    dll.AsstStop(handle)
+                    exit_code = 10
+                    return
+                mas_lock = has_active_mas_lock(args.pause_locks_dir)
+                if mas_lock:
+                    print(f"[emu={args.emu}] MAS PAUSE LOCK detected ({mas_lock}) during nav, yielding...", flush=True)
+                    dll.AsstStop(handle)
+                    exit_code = 15
+                    return
+                if events["all_done"] or not dll.AsstRunning(handle):
+                    break
+            else:
+                print(f"[emu={args.emu}] NAV TIMEOUT (8m), aborting before StrongholdProtocol...", flush=True)
+                dll.AsstStop(handle)
+                exit_code = 16
+                return
+
+            if not events["solo_confirmed"]:
+                print(
+                    f"[emu={args.emu}] NAV GATE FAILED: 个人模拟/极速模拟 not confirmed (last_task={events['last_task']}); refusing to start StrongholdProtocol!",
+                    flush=True,
+                )
+                exit_code = 16
+                return
+            print(f"[emu={args.emu}] NAV GATE PASSED: 个人模拟/极速模拟 confirmed.", flush=True)
+            events["all_done"] = False
 
         sp_params = {"enable": True, "mode": args.mode}
         if args.mode == "badge":

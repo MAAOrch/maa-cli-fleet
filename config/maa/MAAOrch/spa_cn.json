@@ -26,16 +26,17 @@
     ]
   },
   "MAAOrch@SPA@Theme@ClickOpen": {
-    "doc": "点击卫戍协议大厅左下角「更换主题」",
+    "doc": "点击卫戍协议大厅左下角「更换主题」（若点击未生效则先重试点击，避免在大厅死循环滑动）",
     "algorithm": "OcrDetect",
     "action": "ClickSelf",
     "text": ["更换主题"],
     "roi": [250, 635, 190, 80],
+    "maxTimes": 4,
     "postDelay": 2000,
     "next": [
       "MAAOrch@SPA@Theme@SelectDefault",
-      "MAAOrch@SPA@Theme@ScrollTop",
-      "MAAOrch@SPA@Theme@ClickOpen"
+      "MAAOrch@SPA@Theme@ClickOpen",
+      "MAAOrch@SPA@Theme@ScrollTop"
     ]
   },
   "MAAOrch@SPA@Theme@SelectDefault": {
@@ -44,6 +45,7 @@
     "action": "ClickSelf",
     "text": ["卫戍协议终端"],
     "roi": [980, 90, 290, 520],
+    "maxTimes": 4,
     "postDelay": 1500,
     "next": [
       "MAAOrch@SPA@Theme@ApplyBtn",
@@ -52,15 +54,17 @@
     ]
   },
   "MAAOrch@SPA@Theme@ScrollTop": {
-    "doc": "若右侧主题列表不在顶部，向下滑将列表拉回顶部以露出「卫戍协议终端」",
+    "doc": "若右侧主题列表不在顶部，最多向下滑 3 次拉回顶部以露出「卫戍协议终端」，禁止死循环",
     "algorithm": "JustReturn",
     "action": "Swipe",
     "begin": [1140, 220, 40, 40],
     "end": [1140, 540, 40, 40],
     "duration": 500,
+    "maxTimes": 3,
     "postDelay": 1000,
     "next": [
       "MAAOrch@SPA@Theme@SelectDefault",
+      "MAAOrch@SPA@Theme@ClickOpen",
       "MAAOrch@SPA@Theme@ScrollTop"
     ]
   },
@@ -91,8 +95,11 @@
     "algorithm": "JustReturn",
     "action": "ClickRect",
     "specificRect": [40, 25, 45, 35],
+    "maxTimes": 5,
+    "retry_times": 30,
     "postDelay": 2200,
     "next": [
+      "MAAOrch@SPA@CN@GiveUpExisting",
       "MAAOrch@SPA@CN@ArrivedQuickly",
       "MAAOrch@SPA@CN@ArrivedQuicklyOcr",
       "MAAOrch@SPA@CN@ClickSoloTab",
@@ -206,11 +213,15 @@
     "action": "ClickSelf",
     "text": ["返回主页"],
     "roi": [860, 560, 400, 160],
-    "postDelay": 2500,
+    "retry_times": 40,
+    "postDelay": 3000,
     "next": [
       "MAAOrch@SPA@CN@ArrivedQuickly",
       "MAAOrch@SPA@CN@ArrivedQuicklyOcr",
-      "MAAOrch@SPA@CN@ClickSoloTab"
+      "MAAOrch@SPA@CN@ClickSoloTab",
+      "MAAOrch@SPA@CN@ClosePopup",
+      "MAAOrch@SPA@CN@ReturnHome",
+      "MAAOrch@SPA@EnterCN"
     ]
   },
   "MAAOrch@SPA@CN@ClosePopup": {
