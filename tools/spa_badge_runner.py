@@ -1,16 +1,25 @@
 #!/usr/bin/env python3
-"""
+r"""
 Headless Stronghold Protocol (卫戍协议：规程) badge/score runner using MaaCore.dll v6.23+.
 
-Why direct MaaCore.dll ctypes instead of maa-cli?
-  maa-cli v0.7.5's TOML parser does not yet include the `StrongholdProtocol` task variant
-  added in MAA v6.23.0/v6.23.1 (PR #19325). Calling MaaCore.dll directly via ctypes runs
-  the exact official `StrongholdProtocol` badge-farming engine headlessly per emulator,
-  with isolated state directories and clean callback logging.
+Features:
+- Calls MaaCore.dll v6.23+ directly via ctypes (supports native `StrongholdProtocol` task).
+- Auto-launches MuMu emulator & Arknights client (Official / Bilibili).
+- Runs `MAAOrch@SPA@EnterCN` nav (auto-abandons old saves, switches to 个人模拟 tab, verifies 极速模拟).
+- Detects `入门协议` lock (`rc=10`) so locked accounts never loop.
+- Built-in stall watchdog (`--stall-minutes`, default 12): aborts cleanly (`rc=13`) if no task
+  progress occurs for N minutes so the batch orchestrator can reboot the emulator and resume.
+- Forces UTF-8 output and logs strategy/win/loss progress cleanly.
 
-Usage (on MAS host):
-  python tools/spa_badge_runner.py --emu 4 --client Official --mode badge --target 3 --runs 60
-  python tools/spa_badge_runner.py --emu 4 --client Official --mode badge --target 3 --runs 1 --attempts 1 --no-shutdown
+Exit codes:
+  0  = completed cleanly (target wins reached or all strategies already at target badge)
+  5  = ADB connect failed
+  6  = StrongholdProtocol task rejected
+  7  = AsstStart failed
+  10 = tutorial_locked (未过入门协议)
+  11 = max_minutes hard timeout
+  12 = StrongholdProtocolTaskPlugin SubTaskError (e.g. screen lost >30s)
+  13 = stall watchdog triggered (no progress for --stall-minutes)
 """
 
 import argparse
@@ -21,6 +30,11 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 ASST_CALLBACK = ctypes.CFUNCTYPE(None, ctypes.c_int, ctypes.c_char_p, ctypes.c_void_p)
 
@@ -76,7 +90,6 @@ def ensure_emulator_started(mumu_mgr: str, emu: int, boot_timeout: int = 120) ->
                 break
         else:
             raise RuntimeError(f"Emulator {emu} did not finish booting within {boot_timeout}s")
-        # Give Android UI a few seconds to settle
         time.sleep(5)
 
     host = info.get("adb_host_ip") or "127.0.0.1"
@@ -105,7 +118,8 @@ def main():
     ap.add_argument("--addr", default="", help="Override ADB address (e.g. 127.0.0.1:16480)")
     ap.add_argument("--skip-nav", action="store_true", help="Skip StartUp + EnterCN nav (already on SPA lobby)")
     ap.add_argument("--no-shutdown", action="store_true", help="Keep emulator running after task completes")
-    ap.add_argument("--max-minutes", type=int, default=240, help="Hard safety timeout in minutes")
+    ap.add_argument("--max-minutes", type=int, default=300, help="Hard safety timeout in minutes")
+    ap.add_argument("--stall-minutes", type=int, default=12, help="Abort with rc=13 if no task progress for N minutes")
     ap.add_argument("--gpu", type=int, default=-1, help="GPU ID for OCR (-1 = CPU OCR)")
     args = ap.parse_args()
 
@@ -130,7 +144,6 @@ def main():
     os.add_dll_directory(str(maa_dir))
     dll = ctypes.CDLL(str(dll_path))
 
-    # Signatures
     dll.AsstGetVersion.restype = ctypes.c_char_p
     dll.AsstSetUserDir.argtypes = [ctypes.c_char_p]
     dll.AsstSetUserDir.restype = ctypes.c_bool
@@ -157,14 +170,22 @@ def main():
 
     dll.AsstSetUserDir(str(state_dir).encode("utf-8"))
     if args.gpu >= 0:
-        # AsstStaticOptionKey_UseGpu = 2 (legacy) / keep default CPU unless specified
         dll.AsstSetStaticOption(2, str(args.gpu).encode("utf-8"))
 
     if not dll.AsstLoadResource(str(maa_dir).encode("utf-8")):
         print("ERROR: AsstLoadResource failed", file=sys.stderr)
         sys.exit(3)
 
-    events = {"all_done": False, "tutorial_locked": False, "errors": [], "last_task": ""}
+    events = {
+        "all_done": False,
+        "tutorial_locked": False,
+        "errors": [],
+        "last_task": "",
+        "last_activity": time.time(),
+        "wins": 0,
+        "losses": 0,
+        "strategies": [],
+    }
 
     @ASST_CALLBACK
     def on_msg(msg: int, details_bytes: bytes, _arg):
@@ -174,14 +195,35 @@ def main():
             data = json.loads(raw) if raw else {}
         except Exception:
             data = {"raw": raw}
-        sub = data.get("details", {}).get("task", "") or data.get("taskchain", "") or data.get("what", "")
+
+        what = data.get("what", "")
+        sub = data.get("details", {}).get("task", "") or data.get("taskchain", "") or what
+
+        if msg in (10001, 10002, 20001, 20002, 20003):
+            events["last_activity"] = time.time()
+
         if "TutorialLocked" in raw:
             events["tutorial_locked"] = True
-        if msg in (0, 1, 10000, 20000):
+
+        if what == "StrongholdStrategy":
+            d = data.get("details", {})
+            events["strategies"].append(d)
+            print(
+                f"[emu={args.emu}] [PROGRESS] Strategy={d.get('name')} passed={d.get('passed')}/{d.get('target')}",
+                flush=True,
+            )
+        elif what in ("StrongholdResult", "StrongholdFinish", "StrongholdRunResult") or "Victory" in raw or "Defeat" in raw:
+            if "Victory" in raw or data.get("details", {}).get("win") is True:
+                events["wins"] += 1
+            elif "Defeat" in raw or data.get("details", {}).get("win") is False:
+                events["losses"] += 1
+            print(f"[emu={args.emu}] [PROGRESS] {what or name}: {raw[:300]}", flush=True)
+        elif msg in (0, 1, 10000, 20000):
             events["errors"].append((name, raw[:300]))
             print(f"[emu={args.emu}] [{name}] {raw[:300]}", flush=True)
-        elif msg in (3, 10001, 10002, 10004, 20003) or "Stronghold" in raw or "Arrived" in raw:
+        elif msg in (3, 10001, 10002, 10004, 20003) or "Arrived" in raw or "GiveUp" in raw or "ClickSolo" in raw:
             print(f"[emu={args.emu}] [{name}] {raw[:300]}", flush=True)
+
         if msg == 3:
             events["all_done"] = True
         if sub:
@@ -249,7 +291,10 @@ def main():
             exit_code = 7
             return
 
+        events["last_activity"] = time.time()
         deadline = time.time() + args.max_minutes * 60
+        stall_sec = args.stall_minutes * 60
+
         while time.time() < deadline:
             time.sleep(2)
             if events["tutorial_locked"]:
@@ -259,9 +304,20 @@ def main():
                 break
             if events["all_done"] or not dll.AsstRunning(handle):
                 has_sp_err = any("StrongholdProtocolTaskPlugin" in raw for _, raw in events["errors"])
-                print(f"[emu={args.emu}] Completed! last_task={events['last_task']} errors={len(events['errors'])} sp_err={has_sp_err}", flush=True)
+                print(
+                    f"[emu={args.emu}] Completed! last_task={events['last_task']} wins={events['wins']} losses={events['losses']} errors={len(events['errors'])} sp_err={has_sp_err}",
+                    flush=True,
+                )
                 if has_sp_err:
                     exit_code = 12
+                break
+            if stall_sec > 0 and (time.time() - events["last_activity"]) > stall_sec:
+                print(
+                    f"[emu={args.emu}] STALL WATCHDOG: no progress for {args.stall_minutes}m (last_task={events['last_task']}), aborting for retry...",
+                    flush=True,
+                )
+                dll.AsstStop(handle)
+                exit_code = 13
                 break
         else:
             print(f"[emu={args.emu}] Timeout after {args.max_minutes}m, stopping...", flush=True)

@@ -1,23 +1,29 @@
 #!/usr/bin/env python3
-"""
-MAS-aware concurrent batch runner for CN Stronghold Protocol (卫戍协议：规程) badge farming.
+r"""
+MAS-aware concurrent batch runner with automatic crash/stall recovery for CN Stronghold Protocol
+(卫戍协议：规程) badge farming.
 
 Reads `config/spa_cn_batch.json` and runs `tools/spa_badge_runner.py` across up to N concurrent
-emulators (default 3), automatically yielding if AUTO-MAS has active MAA.exe instances or if a
-target emulator is already running externally.
-
-Writes live progress to `E:\maa-cli-fleet\logs\spa_batch_status.json`.
+emulators (default 3), automatically:
+- yielding if AUTO-MAS has active MAA.exe instances or if a target emulator is already occupied;
+- retrying transient failures (ADB disconnect, plugin 30s screen timeout rc=12, stall watchdog rc=13)
+  up to `--max-retries` times with full emulator reboot (progress is preserved by the game);
+- recording live UTF-8 status & retry counts to `E:\maa-cli-fleet\logs\spa_batch_status.json`.
 """
 
 import argparse
 import concurrent.futures
 import datetime
 import json
+import os
 import subprocess
 import sys
 import threading
 import time
 from pathlib import Path
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
 def now_iso() -> str:
@@ -56,8 +62,15 @@ def is_emu_running(mumu_mgr: str, emu: int) -> bool:
         return False
 
 
+def force_shutdown_emu(mumu_mgr: str, emu: int):
+    try:
+        subprocess.run([mumu_mgr, "control", "-v", str(emu), "shutdown"], capture_output=True, timeout=30)
+    except Exception:
+        pass
+
+
 def main():
-    ap = argparse.ArgumentParser(description="Batch StrongholdProtocol badge runner")
+    ap = argparse.ArgumentParser(description="Batch StrongholdProtocol badge runner with auto-recovery")
     ap.add_argument("--config", default=r"E:\maa-cli-fleet\config\spa_cn_batch.json")
     ap.add_argument("--runner", default=r"E:\maa-cli-fleet\tools\spa_badge_runner.py")
     ap.add_argument("--python", default=r"C:\Program Files\Python312\python.exe")
@@ -68,8 +81,10 @@ def main():
     ap.add_argument("--target", type=int, default=3, help="3=Gold, 6=Rainbow")
     ap.add_argument("--runs", type=int, default=60)
     ap.add_argument("--attempts", type=int, default=0)
-    ap.add_argument("--max-minutes", type=int, default=240)
-    ap.add_argument("--skip-emus", default="3", help="Comma-separated emu indices to skip (default: 3 tutorial-locked)")
+    ap.add_argument("--max-minutes", type=int, default=300)
+    ap.add_argument("--stall-minutes", type=int, default=12)
+    ap.add_argument("--max-retries", type=int, default=3, help="Auto-retry count on transient failure/stall")
+    ap.add_argument("--skip-emus", default="3,22", help="Comma-separated emu indices to skip")
     ap.add_argument("--only-emus", default="", help="Optional comma-separated emu indices to run")
     args = ap.parse_args()
 
@@ -92,6 +107,8 @@ def main():
             "target": args.target,
             "runs": args.runs,
             "attempts": args.attempts,
+            "max_retries": args.max_retries,
+            "stall_minutes": args.stall_minutes,
         },
         "accounts": {},
     }
@@ -106,7 +123,7 @@ def main():
                 "name": acc["name"],
                 "client": acc["client"],
                 "emu": int(emu_str),
-                "status": "skipped_tutorial_locked" if emu_str == "3" else "skipped",
+                "status": "skipped_tutorial_locked" if emu_str in ("3", "22") else "skipped",
                 "updated_at": now_iso(),
             }
             continue
@@ -115,6 +132,7 @@ def main():
             "client": acc["client"],
             "emu": int(emu_str),
             "status": "pending",
+            "retries": 0,
             "updated_at": now_iso(),
         }
         queue.append(acc)
@@ -127,11 +145,17 @@ def main():
             tmp.replace(status_path)
 
     save_status()
-    print(f"[batch] Starting {len(queue)} accounts with concurrency={args.concurrency}, target={args.target}, runs={args.runs}", flush=True)
+    print(
+        f"[batch] Starting {len(queue)} accounts with concurrency={args.concurrency}, "
+        f"target={args.target}, runs={args.runs}, max_retries={args.max_retries}",
+        flush=True,
+    )
 
-    # Stagger launches slightly so MuMu/ADB don't contend on cold boot
     launch_gate = threading.Lock()
     last_launch = [0.0]
+
+    env = os.environ.copy()
+    env["PYTHONUTF8"] = "1"
 
     def run_one(acc: dict):
         emu = int(acc["emu"])
@@ -140,60 +164,78 @@ def main():
         client = acc["client"]
         log_file = log_dir / f"spa_emu{emu:02d}.log"
 
-        # Wait if AUTO-MAS GUI is active or this emu is already occupied
-        while is_mas_maa_running() or is_emu_running(args.mumu_mgr, emu):
+        attempt_num = 0
+        rc = -1
+        st = "pending"
+
+        while attempt_num <= args.max_retries:
+            attempt_num += 1
+            while is_mas_maa_running() or is_emu_running(args.mumu_mgr, emu):
+                with status_lock:
+                    state["accounts"][emu_str]["status"] = "waiting_mas_idle"
+                save_status()
+                print(f"[batch][emu={emu} {name}] Waiting for AUTO-MAS / emu idle...", flush=True)
+                time.sleep(30)
+
+            with launch_gate:
+                gap = time.time() - last_launch[0]
+                if gap < 15:
+                    time.sleep(15 - gap)
+                last_launch[0] = time.time()
+
             with status_lock:
-                state["accounts"][emu_str]["status"] = "waiting_mas_idle"
+                state["accounts"][emu_str].update({
+                    "status": "running" if attempt_num == 1 else f"retrying_{attempt_num - 1}",
+                    "retries": attempt_num - 1,
+                    "started_at": state["accounts"][emu_str].get("started_at") or now_iso(),
+                    "last_attempt_at": now_iso(),
+                    "log_file": str(log_file),
+                })
             save_status()
-            print(f"[batch][emu={emu} {name}] Waiting for AUTO-MAS / emu idle...", flush=True)
-            time.sleep(30)
+            print(f"[batch][emu={emu} {name}] Attempt {attempt_num}/{args.max_retries + 1} ({client}) -> {log_file}", flush=True)
 
-        with launch_gate:
-            gap = time.time() - last_launch[0]
-            if gap < 15:
-                time.sleep(15 - gap)
-            last_launch[0] = time.time()
+            cmd = [
+                args.python, "-u", args.runner,
+                "--emu", str(emu),
+                "--client", client,
+                "--mode", args.mode,
+                "--target", str(args.target),
+                "--runs", str(args.runs),
+                "--attempts", str(args.attempts),
+                "--max-minutes", str(args.max_minutes),
+                "--stall-minutes", str(args.stall_minutes),
+            ]
+            mode_open = "w" if attempt_num == 1 else "a"
+            with open(log_file, mode_open, encoding="utf-8", errors="replace") as lf:
+                if attempt_num > 1:
+                    lf.write(f"\n=== AUTO-RETRY #{attempt_num - 1} at {now_iso()} ===\n")
+                    lf.flush()
+                proc = subprocess.run(cmd, stdout=lf, stderr=subprocess.STDOUT, env=env)
+                rc = proc.returncode
 
-        with status_lock:
-            state["accounts"][emu_str].update({
-                "status": "running",
-                "started_at": now_iso(),
-                "log_file": str(log_file),
-            })
-        save_status()
-        print(f"[batch][emu={emu} {name}] Launching ({client}) -> {log_file}", flush=True)
+            if rc == 0:
+                st = "completed"
+                break
+            if rc == 10:
+                st = "tutorial_locked"
+                break
 
-        cmd = [
-            args.python, "-u", args.runner,
-            "--emu", str(emu),
-            "--client", client,
-            "--mode", args.mode,
-            "--target", str(args.target),
-            "--runs", str(args.runs),
-            "--attempts", str(args.attempts),
-            "--max-minutes", str(args.max_minutes),
-        ]
-        with open(log_file, "w", encoding="utf-8", errors="replace") as lf:
-            proc = subprocess.run(cmd, stdout=lf, stderr=subprocess.STDOUT)
-            rc = proc.returncode
-
-        if rc == 0:
-            st = "completed"
-        elif rc == 10:
-            st = "tutorial_locked"
-        elif rc == 11:
-            st = "timeout"
-        else:
-            st = f"failed_rc_{rc}"
+            # Transient failure (ADB / 30s screen lost / stall / timeout) -> clean reboot & retry
+            st = {11: "timeout", 12: "plugin_error", 13: "stalled"}.get(rc, f"failed_rc_{rc}")
+            print(f"[batch][emu={emu} {name}] Attempt {attempt_num} ended with {st} (rc={rc})", flush=True)
+            force_shutdown_emu(args.mumu_mgr, emu)
+            if attempt_num <= args.max_retries:
+                time.sleep(15)
 
         with status_lock:
             state["accounts"][emu_str].update({
                 "status": st,
                 "exit_code": rc,
+                "retries": attempt_num - 1,
                 "finished_at": now_iso(),
             })
         save_status()
-        print(f"[batch][emu={emu} {name}] Finished status={st} rc={rc}", flush=True)
+        print(f"[batch][emu={emu} {name}] Final status={st} rc={rc} retries={attempt_num - 1}", flush=True)
         return emu, name, st, rc
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrency) as pool:
