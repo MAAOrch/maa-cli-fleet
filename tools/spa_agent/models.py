@@ -18,12 +18,14 @@ class SceneType(str, Enum):
 class ActionKind(str, Enum):
     BUY = "BUY"
     PICK_REWARD = "PICK_REWARD"
+    EXPAND_SHOP = "EXPAND_SHOP"
     UPGRADE_SHOP = "UPGRADE_SHOP"
     REFRESH = "REFRESH"
     DEPLOY = "DEPLOY"
     SELL = "SELL"
     READY = "READY"
     CONFIRM_DIALOG = "CONFIRM_DIALOG"
+    RETURN_HOME = "RETURN_HOME"
     WAIT = "WAIT"
 
 
@@ -58,6 +60,7 @@ class ShopState:
     deploy_slots_free: int = 0
     shop_level: int = 1
     shop_maxed: bool = False
+    shop_collapsed: bool = False
     upgrade_cost: int | None = None
     upgrade_x: int | None = None
     is_reward_shop: bool = False

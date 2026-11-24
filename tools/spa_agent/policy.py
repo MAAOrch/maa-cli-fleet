@@ -150,8 +150,12 @@ class SpaPolicyEngine:
 
         if state.scene == SceneType.CONFIRM_READY:
             return Action(ActionKind.CONFIRM_DIALOG, "confirm ready popup")
+        if state.scene == SceneType.SETTLEMENT:
+            return Action(ActionKind.RETURN_HOME, "settlement complete, return to lobby")
         if state.scene != SceneType.PREP_SHOP:
             return Action(ActionKind.WAIT, f"scene={state.scene.value}")
+        if state.shop_collapsed:
+            return Action(ActionKind.EXPAND_SHOP, "shop drawer collapsed, expand first", {"x": 1187, "y": 660})
 
         if state.round_num != self.last_round:
             self.last_round = state.round_num

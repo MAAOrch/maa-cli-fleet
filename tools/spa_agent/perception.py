@@ -12,7 +12,7 @@ from .models import BenchUnit, SceneType, ShopCard, ShopState
 # Exact 1280x720 ROIs ported from MAA v6.23.1 StrongholdProtocol.json
 ROI_READY_BTN = (1125, 85, 140, 60)
 ROI_SHOP_GOLD = (1173, 507, 80, 43)
-ROI_SHOP_ROUND = (485, 21, 33, 31)
+ROI_SHOP_ROUND = (455, 18, 65, 34)
 ROI_SHOP_SLOTS = (1241, 377, 24, 28)
 ROI_SHOP_UPGRADE_COST = (0, 513, 160, 120)
 ROI_SHOP_BOTTOM = (0, 636, 507, 66)
@@ -108,8 +108,34 @@ class SpaPerception:
         if self._ocr is None:
             from rapidocr_onnxruntime import RapidOCR
 
-            self._ocr = RapidOCR()
+            self._ocr = RapidOCR(use_cls=False)
         return self._ocr
+
+    def ocr_full(self, img: np.ndarray) -> list[tuple[str, tuple[int, int, int, int], float]]:
+        result, _ = self._get_ocr()(img)
+        if not result:
+            return []
+        items: list[tuple[str, tuple[int, int, int, int], float]] = []
+        for box, text, score in result:
+            xs = [int(p[0]) for p in box]
+            ys = [int(p[1]) for p in box]
+            x1, y1, x2, y2 = min(xs), min(ys), max(xs), max(ys)
+            items.append((str(text).strip(), (x1, y1, x2 - x1, y2 - y1), float(score)))
+        return items
+
+    @staticmethod
+    def filter_roi(
+        items: list[tuple[str, tuple[int, int, int, int], float]],
+        roi: tuple[int, int, int, int],
+    ) -> list[tuple[str, tuple[int, int, int, int], float]]:
+        rx, ry, rw, rh = roi
+        out = []
+        for text, rect, score in items:
+            cx = rect[0] + rect[2] // 2
+            cy = rect[1] + rect[3] // 2
+            if rx <= cx <= rx + rw and ry <= cy <= ry + rh:
+                out.append((text, rect, score))
+        return out
 
     def ocr_roi(self, img: np.ndarray, roi: tuple[int, int, int, int]) -> list[tuple[str, tuple[int, int, int, int], float]]:
         crop = crop_roi(img, roi)
@@ -127,56 +153,54 @@ class SpaPerception:
             items.append((str(text).strip(), (ox + x1, oy + y1, x2 - x1, y2 - y1), float(score)))
         return items
 
-    def read_int(self, img: np.ndarray, roi: tuple[int, int, int, int]) -> int | None:
-        items = self.ocr_roi(img, roi)
+    @staticmethod
+    def _first_int(items: list[tuple[str, tuple[int, int, int, int], float]]) -> int | None:
         for text, _, _ in items:
             m = re.search(r"\d+", text)
             if m:
                 return int(m.group(0))
         return None
 
+    def _detect_scene_from_items(self, items: list[tuple[str, tuple[int, int, int, int], float]]) -> SceneType:
+        if any("准备就绪" in t or "准备" in t for t, _, _ in self.filter_roi(items, ROI_READY_BTN)):
+            return SceneType.PREP_SHOP
+        if any(k in t for t, _, _ in self.filter_roi(items, ROI_CONFIRM_READY) for k in ("确认准备", "资金将在", "临时整备区")):
+            return SceneType.CONFIRM_READY
+        if any(k in t for t, _, _ in self.filter_roi(items, ROI_SETTLEMENT) for k in ("模拟完成", "模拟中止", "模拟结束", "返回主页")):
+            return SceneType.SETTLEMENT
+        if any("极速模拟" in t or "规程等级" in t for t, _, _ in self.filter_roi(items, ROI_LOBBY_SOLO_QUICK)):
+            return SceneType.LOBBY_SOLO
+        if any("联合模拟" in t or "个人模拟" in t for t, _, _ in self.filter_roi(items, ROI_LOBBY_TABS)):
+            return SceneType.LOBBY_COOP
+        if any("回合" in t for t, _, _ in self.filter_roi(items, ROI_BATTLE_ROUND)):
+            return SceneType.BATTLE
+        return SceneType.UNKNOWN
+
     def detect_scene(self, img_raw: np.ndarray) -> SceneType:
         img = ensure_720p(img_raw)
-
-        ready_texts = [t for t, _, _ in self.ocr_roi(img, ROI_READY_BTN)]
-        if any("准备就绪" in t or "准备" in t for t in ready_texts):
-            return SceneType.PREP_SHOP
-
-        confirm_texts = [t for t, _, _ in self.ocr_roi(img, ROI_CONFIRM_READY)]
-        if any(k in t for t in confirm_texts for k in ("确认准备", "资金将在", "临时整备区")):
-            return SceneType.CONFIRM_READY
-
-        settle_texts = [t for t, _, _ in self.ocr_roi(img, ROI_SETTLEMENT)]
-        if any(k in t for t in settle_texts for k in ("模拟完成", "模拟中止", "模拟结束", "返回主页")):
-            return SceneType.SETTLEMENT
-
-        quick_texts = [t for t, _, _ in self.ocr_roi(img, ROI_LOBBY_SOLO_QUICK)]
-        if any("极速模拟" in t or "规程等级" in t for t in quick_texts):
-            return SceneType.LOBBY_SOLO
-
-        tab_texts = [t for t, _, _ in self.ocr_roi(img, ROI_LOBBY_TABS)]
-        if any("联合模拟" in t or "个人模拟" in t for t in tab_texts):
-            return SceneType.LOBBY_COOP
-
-        battle_texts = [t for t, _, _ in self.ocr_roi(img, ROI_BATTLE_ROUND)]
-        if any("回合" in t for t in battle_texts):
-            return SceneType.BATTLE
-
-        return SceneType.UNKNOWN
+        return self._detect_scene_from_items(self.ocr_full(img))
 
     def parse_shop(self, img_raw: np.ndarray) -> ShopState:
         img = ensure_720p(img_raw)
-        scene = self.detect_scene(img)
+        all_items = self.ocr_full(img)
+        scene = self._detect_scene_from_items(all_items)
         state = ShopState(scene=scene)
         if scene != SceneType.PREP_SHOP:
             return state
 
-        state.round_num = self.read_int(img, ROI_SHOP_ROUND) or 0
-        state.gold = self.read_int(img, ROI_SHOP_GOLD) or 0
-        state.deploy_slots_free = self.read_int(img, ROI_SHOP_SLOTS) or 0
+        state.round_num = self._first_int(self.filter_roi(all_items, ROI_SHOP_ROUND)) or 0
+
+        # Check whether the shop drawer is collapsed ("展开") vs expanded ("收起")
+        drawer_texts = [t for t, _, _ in self.filter_roi(all_items, ROI_SHOP_EXPANDED)]
+        if any("展开" in t for t in drawer_texts):
+            state.shop_collapsed = True
+            return state
+
+        state.gold = self._first_int(self.filter_roi(all_items, ROI_SHOP_GOLD)) or 0
+        state.deploy_slots_free = self._first_int(self.filter_roi(all_items, ROI_SHOP_SLOTS)) or 0
 
         # Check upgrade button / maxed state on bottom-left
-        bottom_items = self.ocr_roi(img, ROI_SHOP_BOTTOM)
+        bottom_items = self.filter_roi(all_items, ROI_SHOP_BOTTOM)
         for text, rect, _ in bottom_items:
             state.raw_texts.append(text)
             if any(k in text for k in ("已满级", "满级", "MAX")):
@@ -189,13 +213,13 @@ class SpaPerception:
         if not state.shop_maxed:
             if state.upgrade_x:
                 cost_roi = (max(0, state.upgrade_x - 35), 515, 70, 50)
-                state.upgrade_cost = self.read_int(img, cost_roi)
+                state.upgrade_cost = self._first_int(self.filter_roi(all_items, cost_roi))
             if state.upgrade_cost is None:
-                state.upgrade_cost = self.read_int(img, ROI_SHOP_UPGRADE_COST)
+                state.upgrade_cost = self._first_int(self.filter_roi(all_items, ROI_SHOP_UPGRADE_COST))
 
         # Parse shop cards (names + pacts + costs + tier badges)
-        name_items = self.ocr_roi(img, ROI_SHOP_CARD_NAMES)
-        card_items = self.ocr_roi(img, ROI_SHOP_CARDS)
+        name_items = self.filter_roi(all_items, ROI_SHOP_CARD_NAMES)
+        card_items = self.filter_roi(all_items, ROI_SHOP_CARDS)
 
         # Filter out upgrade button region if upgrade_x is known
         min_card_x = (state.upgrade_x + 95) if state.upgrade_x else 160

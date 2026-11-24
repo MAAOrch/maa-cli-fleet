@@ -29,6 +29,8 @@ def execute_action(ctrl: AdbController, action: Action) -> None:
     p = action.params
     if action.kind in (ActionKind.BUY, ActionKind.PICK_REWARD):
         ctrl.buy_card(int(p["x"]))
+    elif action.kind == ActionKind.EXPAND_SHOP:
+        ctrl.click(int(p.get("x", 1187)), int(p.get("y", 660)), delay=0.6)
     elif action.kind == ActionKind.UPGRADE_SHOP:
         ctrl.upgrade_shop(int(p["x"]))
     elif action.kind == ActionKind.REFRESH:
@@ -41,6 +43,8 @@ def execute_action(ctrl: AdbController, action: Action) -> None:
         ctrl.click_ready()
     elif action.kind == ActionKind.CONFIRM_DIALOG:
         ctrl.click_confirm_dialog()
+    elif action.kind == ActionKind.RETURN_HOME:
+        ctrl.click(1137, 660, delay=1.2)
     else:
         time.sleep(1.0)
 
