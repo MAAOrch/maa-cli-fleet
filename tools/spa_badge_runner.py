@@ -312,13 +312,29 @@ def main():
     exit_code = 0
     try:
         print(f"[emu={args.emu}] Connecting ADB {addr}...", flush=True)
-        if not dll.AsstConnect(
-            handle,
-            args.adb.encode("utf-8"),
-            addr.encode("utf-8"),
-            b"General",
-        ):
-            print(f"ERROR: AsstConnect failed for {addr}", file=sys.stderr)
+        connected = False
+        for attempt in range(1, 4):
+            try:
+                subprocess.run(
+                    [args.adb, "connect", addr],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+            except Exception:
+                pass
+            if dll.AsstConnect(
+                handle,
+                args.adb.encode("utf-8"),
+                addr.encode("utf-8"),
+                b"General",
+            ):
+                connected = True
+                break
+            print(f"[emu={args.emu}] AsstConnect attempt {attempt}/3 failed for {addr}, retrying in 4s...", flush=True)
+            time.sleep(4)
+        if not connected:
+            print(f"ERROR: AsstConnect failed for {addr} after 3 attempts", file=sys.stderr)
             exit_code = 5
             return exit_code
 
