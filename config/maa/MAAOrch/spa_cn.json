@@ -30,8 +30,15 @@
     "doc": "点击卫戍协议大厅左下角「更换主题」（若点击未生效则先重试点击，避免在大厅死循环滑动）",
     "algorithm": "OcrDetect",
     "action": "ClickSelf",
-    "text": ["更换主题"],
-    "roi": [250, 635, 190, 80],
+    "text": [
+      "更换主题"
+    ],
+    "roi": [
+      250,
+      635,
+      190,
+      80
+    ],
     "maxTimes": 4,
     "postDelay": 2000,
     "next": [
@@ -44,8 +51,15 @@
     "doc": "在主题列表右侧选择默认主题「卫戍协议终端」（覆盖整列 ROI，找不到时向上滚回列表顶部）",
     "algorithm": "OcrDetect",
     "action": "ClickSelf",
-    "text": ["卫戍协议终端"],
-    "roi": [980, 90, 290, 520],
+    "text": [
+      "卫戍协议终端"
+    ],
+    "roi": [
+      980,
+      90,
+      290,
+      520
+    ],
     "maxTimes": 4,
     "postDelay": 1500,
     "next": [
@@ -58,8 +72,18 @@
     "doc": "若右侧主题列表不在顶部，最多向下滑 3 次拉回顶部以露出「卫戍协议终端」，禁止死循环",
     "algorithm": "JustReturn",
     "action": "Swipe",
-    "begin": [1140, 220, 40, 40],
-    "end": [1140, 540, 40, 40],
+    "begin": [
+      1140,
+      220,
+      40,
+      40
+    ],
+    "end": [
+      1140,
+      540,
+      40,
+      40
+    ],
     "duration": 500,
     "maxTimes": 3,
     "postDelay": 1000,
@@ -73,8 +97,15 @@
     "doc": "若未应用则点击右下角「设置主题」",
     "algorithm": "OcrDetect",
     "action": "ClickSelf",
-    "text": ["设置主题"],
-    "roi": [950, 610, 240, 100],
+    "text": [
+      "设置主题"
+    ],
+    "roi": [
+      950,
+      610,
+      240,
+      100
+    ],
     "postDelay": 1800,
     "next": [
       "MAAOrch@SPA@Theme@BackToLobby"
@@ -84,8 +115,15 @@
     "doc": "已是默认主题「已设置」，直接返回主页",
     "algorithm": "OcrDetect",
     "action": "DoNothing",
-    "text": ["已设置"],
-    "roi": [950, 610, 240, 100],
+    "text": [
+      "已设置"
+    ],
+    "roi": [
+      950,
+      610,
+      240,
+      100
+    ],
     "postDelay": 500,
     "next": [
       "MAAOrch@SPA@Theme@BackToLobby"
@@ -95,7 +133,12 @@
     "doc": "点左上角返回按钮回到卫戍协议主页，再切回「个人模拟」确认「极速模拟」",
     "algorithm": "JustReturn",
     "action": "ClickRect",
-    "specificRect": [40, 25, 45, 35],
+    "specificRect": [
+      40,
+      25,
+      45,
+      35
+    ],
     "maxTimes": 5,
     "retry_times": 30,
     "postDelay": 2200,
@@ -111,8 +154,15 @@
     "doc": "检测到主页有旧存档「放弃模拟」按钮，先点击放弃再确认，避免进入断线重连卡局",
     "algorithm": "OcrDetect",
     "action": "ClickSelf",
-    "text": ["放弃模拟"],
-    "roi": [760, 590, 260, 120],
+    "text": [
+      "放弃模拟"
+    ],
+    "roi": [
+      760,
+      590,
+      260,
+      120
+    ],
     "postDelay": 1800,
     "next": [
       "MAAOrch@SPA@CN@ConfirmGiveUp",
@@ -125,8 +175,16 @@
     "doc": "检测到已终止局的「断线重连」（无放弃模拟按钮，点进后直接出结算页「返回主页」）",
     "algorithm": "OcrDetect",
     "action": "ClickSelf",
-    "text": ["断线重连", "已终止"],
-    "roi": [1040, 600, 230, 110],
+    "text": [
+      "断线重连",
+      "已终止"
+    ],
+    "roi": [
+      1040,
+      600,
+      230,
+      110
+    ],
     "maxTimes": 3,
     "postDelay": 3500,
     "next": [
@@ -142,23 +200,43 @@
     "doc": "已切到「个人模拟」且「极速模拟」模板可见，立即结束导航",
     "algorithm": "MatchTemplate",
     "template": "StrongholdProtocol@EnterIndependentQuickly.png",
-    "roi": [707, 549, 166, 171],
+    "roi": [
+      707,
+      549,
+      166,
+      171
+    ],
     "action": "DoNothing",
     "next": []
   },
   "MAAOrch@SPA@CN@ArrivedQuicklyOcr": {
     "doc": "OCR 兜底确认「极速模拟」按钮可见，立即结束导航",
     "algorithm": "OcrDetect",
-    "text": ["极速模拟"],
-    "roi": [680, 540, 260, 180],
+    "text": [
+      "极速模拟"
+    ],
+    "roi": [
+      680,
+      540,
+      260,
+      180
+    ],
     "action": "DoNothing",
     "next": []
   },
   "MAAOrch@SPA@CN@TutorialLocked": {
     "doc": "检测到「完成入门协议后解锁」，说明该号未过入门协议，提前停止导航避免死循环",
     "algorithm": "OcrDetect",
-    "text": ["完成入门协议后解锁", "入门协议"],
-    "roi": [640, 560, 340, 150],
+    "text": [
+      "完成入门协议后解锁",
+      "入门协议"
+    ],
+    "roi": [
+      640,
+      560,
+      340,
+      150
+    ],
     "action": "DoNothing",
     "next": []
   },
@@ -166,8 +244,15 @@
     "doc": "在卫戍协议：规程主页点击「个人模拟」页签以露出「极速模拟」入口",
     "algorithm": "OcrDetect",
     "action": "ClickSelf",
-    "text": ["个人模拟"],
-    "roi": [880, 500, 190, 110],
+    "text": [
+      "个人模拟"
+    ],
+    "roi": [
+      880,
+      500,
+      190,
+      110
+    ],
     "postDelay": 1800,
     "next": [
       "MAAOrch@SPA@CN@GiveUpExisting",
@@ -182,8 +267,15 @@
     "doc": "主界面点击「终端」",
     "algorithm": "OcrDetect",
     "action": "ClickSelf",
-    "text": ["终端"],
-    "roi": [860, 120, 320, 220],
+    "text": [
+      "终端"
+    ],
+    "roi": [
+      860,
+      120,
+      320,
+      220
+    ],
     "postDelay": 2500,
     "next": [
       "MAAOrch@SPA@CN@GiveUpExisting",
@@ -196,11 +288,21 @@
     ]
   },
   "MAAOrch@SPA@CN@ClickTerminalBannerOcr": {
-    "doc": "终端页右侧活动入口点击「卫戍协议」（限定右侧 ROI 避免在卫戍主页误点标题）",
+    "doc": "终端页右侧活动入口点击「卫戍协议」（y=85起覆盖剿灭打满后上移的条目，限定右侧ROI避免在卫戍主页误点标题）",
     "algorithm": "OcrDetect",
     "action": "ClickSelf",
-    "text": ["卫戍协议", "卫戍"],
-    "roi": [820, 180, 450, 360],
+    "text": [
+      "卫戍协议",
+      "卫成协议",
+      "卫戍",
+      "规程"
+    ],
+    "roi": [
+      820,
+      85,
+      450,
+      460
+    ],
     "postDelay": 3500,
     "next": [
       "MAAOrch@SPA@CN@GiveUpExisting",
@@ -216,8 +318,16 @@
     "doc": "放弃旧存档弹窗确认",
     "algorithm": "OcrDetect",
     "action": "ClickSelf",
-    "text": ["确定", "确认"],
-    "roi": [680, 380, 500, 220],
+    "text": [
+      "确定",
+      "确认"
+    ],
+    "roi": [
+      680,
+      380,
+      500,
+      220
+    ],
     "postDelay": 3000,
     "next": [
       "MAAOrch@SPA@CN@ReturnHome",
@@ -230,8 +340,15 @@
     "doc": "结算后返回卫戍主页",
     "algorithm": "OcrDetect",
     "action": "ClickSelf",
-    "text": ["返回主页"],
-    "roi": [860, 560, 400, 160],
+    "text": [
+      "返回主页"
+    ],
+    "roi": [
+      860,
+      560,
+      400,
+      160
+    ],
     "retry_times": 40,
     "postDelay": 3000,
     "next": [
@@ -247,9 +364,22 @@
     "doc": "关掉首次进入介绍/提示弹窗或 04:00 跨日同步确认弹窗",
     "algorithm": "OcrDetect",
     "action": "ClickSelf",
-    "text": ["关闭", "知道了", "跳过", "数据已更新", "确定"],
-    "roi": [0, 0, 1280, 720],
+    "text": [
+      "关闭",
+      "知道了",
+      "跳过",
+      "数据已更新",
+      "确定"
+    ],
+    "roi": [
+      0,
+      0,
+      1280,
+      720
+    ],
     "postDelay": 1800,
-    "next": ["MAAOrch@SPA@EnterCN"]
+    "next": [
+      "MAAOrch@SPA@EnterCN"
+    ]
   }
 }
